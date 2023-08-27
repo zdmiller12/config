@@ -1,0 +1,44 @@
+[user]
+	name = zdmiller12
+	email = zdmiller12@gmail.com
+[pull]
+	rebase = true
+[branch]
+  autosetuprebase = always
+[core]
+  autocrlf = input
+  editor = nano
+  excludesfile = ~/.gitignore
+  pager = less -F -X
+[alias]
+  a = add -A
+  ac = commit -a --message
+  br = branch
+  ci = commit
+  co = checkout
+  cob = checkout -b
+  col = checkout @{-1}
+  com = checkout master
+  diffc = diff --cached
+  edit = !vim $(git status -s | cut -c4-)
+  editbranch = !vim $(git diff --name-only  master)
+  incoming = log origin/master ^master
+  last = log -1 HEAD
+  logpretty = log -10 --pretty=oneline
+  ll = log --oneline
+  lol = log --oneline --graph --decorate
+  outgoing = log master ^origin/master
+  pom = push --set-upstream origin master
+  pob = !git push --set-upstream origin $(git branch | grep \\* | cut -d ' ' -f2)
+  pullsubs = submodule foreach git pull origin master
+  spa = !"git stash; git pull; git stash apply"
+  spp = !"git stash; git pull; git stash pop"
+  st = status
+  sts = status --short --branch
+  t = tag -n3
+  unstage = reset HEAD --
+[filter "lfs"]
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+	process = git-lfs filter-process
+	required = true
