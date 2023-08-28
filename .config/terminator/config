@@ -1,6 +1,16 @@
 [global_config]
   suppress_multiple_term_dialog = True
 [keybindings]
+[profiles]
+  [[default]]
+    background_darkness = 1.0
+    background_type = transparent
+    cursor_color = "#aaaaaa"
+    foreground_color = "#ffffff"
+    scrollback_infinite = True
+    palette = "#000000:#cc0000:#4e9a06:#c4a000:#3465a4:#75507b:#06989a:#d3d7cf:#555753:#ef2929:#8ae234:#fce94f:#729fcf:#ad7fa8:#34e2e2:#eeeeec"
+    use_custom_command = True
+    custom_command = /usr/bin/fish
 [layouts]
   [[default]]
     [[[child1]]]
@@ -28,11 +38,3 @@
       type = Terminal
       uuid = 8e0c6215-e095-4fe2-8726-cab967270d69
 [plugins]
-[profiles]
-  [[default]]
-    background_darkness = 1.0
-    background_type = transparent
-    cursor_color = "#aaaaaa"
-    foreground_color = "#ffffff"
-    palette = "#000000:#cc0000:#4e9a06:#c4a000:#3465a4:#75507b:#06989a:#d3d7cf:#555753:#ef2929:#8ae234:#fce94f:#729fcf:#ad7fa8:#34e2e2:#eeeeec"
-    scrollback_infinite = True
