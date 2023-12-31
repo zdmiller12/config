@@ -14,6 +14,19 @@ command will show the name of the first available printer
 
 > lpstat -d
 
+## Setting up Cronjob
+
+Installed the following cronjob with `crontab -e`
+
+```
+0 10 * * 4#1 /home/miller/git/config/printing/print.sh
+```
+
+which varies slightly from the more common examples in that
+
+- seconds arent specified
+- `?` (and probly other special characters) arent supported
+
 ---
 
 ## Test Images
