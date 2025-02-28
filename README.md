@@ -1,23 +1,37 @@
 # Personal Configurations
 
-> Personal configs for various applications.
+> Personal configs and tools...
 
-## .bashrc
+## Setting Up a New Machine
 
-[.bashrc](./.bashrc) belongs in user's home directory and should be updated as needed to point to [personal_aliases.sh](./personal_aliases.sh) (at least).
+1. Install [fish-shell](https://github.com/fish-shell/fish-shell)
+2. Install [fisher](https://github.com/jorgebucaran/fisher)
+3. Install [nvm.fish](https://github.com/jorgebucaran/nvm.fish)
+4. Install [rbenv](https://github.com/rbenv/rbenv) & [ruby-build](https://github.com/rbenv/ruby-build) (*if needed*)
+5. Install [pyenv](https://github.com/pyenv/pyenv)
 
-## Fish
 
-[config.fish](./.config/fish/config.fish) belongs at `$HOME/.config/fish/config.fish` and should be updated as needed to point to [personal_aliases.sh](./personal_aliases.sh) (at least).
+### fish-shell configuration
 
-## Git
+Copy contents of [config.fish](./config.fish) to `$HOME/.config/fish/config.fish`.
 
-[.gitconfig](./.gitconfig) belongs in user's home directory and should be updated for a specific git account.
+> using fish shell...
 
-## Personal Aliases
+```fish
+printf "%s\n" ( cat config.fish ) > $HOME/.config/fish/config.fish
+```
 
-[personal_aliases.sh](./personal_aliases.sh) can live anywhere, but is referred to by other configuration items.
+## git configuration
 
-## Terminator
+Copy contents of [.gitconfig](./.gitconfig) to `$HOME/.gitconfig`.
 
-[config](./.config/terminator/config) belongs at `$HOME/.config/terminator/config` and should be updated for the `title` to match a specific machine.
+> using fish shell...
+
+```fish
+printf "%s\n" ( cat .gitconfig ) > $HOME/.gitconfig
+```
+
+## Tools
+
+- [Printing](./printing/README.md)
+- [Videos](./videos/README.md)
