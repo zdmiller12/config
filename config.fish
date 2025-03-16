@@ -1,6 +1,11 @@
 # fish-shell configuration
 # https://github.com/fish-shell/fish-shell
 
+set -Ux RBENV_ROOT "$HOME/.rbenv"
+set -Ux RBENV_SHELL fish
+fish_add_path --path "$RBENV_ROOT/bin"
+fish_add_path --path "$RBENV_ROOT/shims"
+
 if status is-interactive
     # Commands to run in interactive sessions can go here
 
