@@ -8,7 +8,10 @@
 # i.e. if files are 1.mp4, 2.mp4, ..., 10.mp4, 11.mp4, then the single-digit filenames
 # should be updated to 01.mp4, 02.mp4, etc.
 #
+
 set -eux
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
 INPUT_DIR="${1}"
 cd "${INPUT_DIR}"
@@ -24,7 +27,7 @@ MERGED_FILE="${INPUT_DIR}/$(date '+%Y-%m-%d')_merged${EXTENSION}"
 rm -rf $VIDEOS_FILE $MERGED_FILE *.ts
 
 # remove spaces from filenames
-python3 ~/rename.py --path="${INPUT_DIR}"
+python3 "${DIR}/rename.py" --path="${INPUT_DIR}"
 
 touch "${VIDEOS_FILE}"
 for VIDEO in $(find "${INPUT_DIR}" -type f -name "*${EXTENSION}" -not -path "*/2*_merged.*" | sort)
@@ -32,7 +35,7 @@ do
     # previous approach 1
 	#echo "file '$(realpath "${VIDEO}")'" >> "${VIDEOS_FILE}"
 	VIDEO_FILE=$( basename "${VIDEO}" )
-	ffmpeg -y -ignore_unknown -loglevel error -fflags +discardcorrupt -i $VIDEO_FILE -c copy -bsf:v h264_mp4toannexb -f mpegts $VIDEO_FILE.ts
+	ffmpeg -y -ignore_unknown -loglevel error -fflags +discardcorrupt -i $VIDEO_FILE -c copy -bsf:v h264_mp4toannexb -f h264 $VIDEO_FILE.ts
 done
 
 # previous approach 1
