@@ -1,5 +1,10 @@
 # fish-shell configuration
 # https://github.com/fish-shell/fish-shell
+#
+# other lines which appeared
+#  source "$HOME/.cargo/env.fish"         # seems automated
+#  fish_add_path --path "$HOME/gems/bin"  # is this still needed with rbenv?
+#
 
 set -Ux RBENV_ROOT "$HOME/.rbenv"
 set -Ux RBENV_SHELL fish
@@ -13,7 +18,7 @@ if status is-interactive
 end
 
 function fish_greeting
-    echo (set_color green)Do you like fish sticks?
+    echo (set_color green)"Do you like fish sticks?"
 end
 
 set -Ux AWS_DEFAULT_REGION us-east-1
