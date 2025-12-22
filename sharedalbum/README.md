@@ -11,9 +11,3 @@ This repository now includes a script that automates downloading the full conten
    ```bash
    ./main.py --help
    ```
-
-## State
-
-- passing in URL of first image
-- iterates a fixed-number of times, downloading
-- 

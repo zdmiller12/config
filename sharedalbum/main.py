@@ -1,15 +1,10 @@
 #!/usr/bin/env python3.13
-"""Automate downloading photos from an iCloud shared album via Playwright.
-
-https://www.icloud.com/sharedalbum/#B1jGY8gBYnCLG9;9BCAC758-7C65-4659-B899-0955A8900E6D
-
-"""
+"""Automate downloading photos from an iCloud shared album via Playwright."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
-import re
 import shutil
 from collections.abc import Iterable
 from pathlib import Path
