@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main, bootstrap]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Shellcheck the engine and all module setup scripts
+        run: |
+          shellcheck bootstrap.sh
+          shellcheck lib/*.sh
+          # Modules are sourced with the engine's helpers already defined,
+          # so tell shellcheck not to flag those as undefined.
+          for f in modules/*/setup.sh; do
+            [ -e "$f" ] || continue
+            shellcheck -x -e SC1091 "$f"
+          done
+
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install bats
+        run: sudo apt-get update && sudo apt-get install -y bats
+      - name: Run unit tests
+        run: bats tests/

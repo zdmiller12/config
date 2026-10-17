@@ -1,0 +1,9 @@
+# Execution scratch - keeps session artifacts off the working tree
+.superpowers/
+
+# Local, machine-specific state — never committed.
+local.env
+
+# Editor and OS noise
+*.swp
+.DS_Store
