@@ -85,7 +85,7 @@ templates at run time using the local config, not committed pre-filled.
 | `50-media` | on | ffmpeg, mkvtoolnix and mkvtoolnix-gui, VLC via snap, inkscape, pandoc, texlive, exif, webp |
 | `60-nas` | off | sshfs, the `mnt-nas-photos` systemd unit rendered from prompted host/path/key, and mountpoint creation |
 | `90-bluetooth-autoreconnect` | off | `AutoEnable=true` in `/etc/bluetooth/main.conf` `[Policy]`, `UserspaceHID=true` in `/etc/bluetooth/input.conf` `[General]`, restart bluetooth |
-| `90-dualboot` | off | GRUB hidden-menu settings and the `winboot` fish function |
+| `90-dualboot` | off | GRUB hidden-menu settings, `GRUB_DISABLE_OS_PROBER=false` so Windows appears as a real menu entry, and a dynamically-resolving `winboot` fish function installed only when a Windows EFI entry is detected |
 
 `00-core` is a hard prerequisite of everything else and cannot be deselected.
 `10-shell` is required by `20-toolchains` (the init blocks have nowhere to go
@@ -199,9 +199,18 @@ the strategy is layered rather than exhaustive.
 
 ## 9. Migration of existing repo content
 
-- `config.fish` → `dotfiles/fish/config.fish`, rewritten: the rbenv and tfenv
-  blocks are dropped, asdf and pyenv init retained, `winboot` becomes a
-  function in `dotfiles/fish/functions/` rather than an alias.
+- `config.fish` → `dotfiles/fish/config.fish`, rewritten. **The live
+  `~/.config/fish/config.fish` is the migration source, not the committed
+  copy** — the two have diverged. The live file additionally sources
+  `~/.cargo/env.fish`, adds `~/gems/bin` to PATH, and prepends a `tfenv` path;
+  all three are superseded by §2's toolchain decisions (rustup owns cargo,
+  tfenv is dropped), so they are discarded rather than ported. The rbenv block
+  goes too; asdf and pyenv init are retained.
+- `winboot` is **not** in the committed repo. It exists only as an alias in the
+  live fish config, `sudo efibootmgr --bootnext 0001 && sudo reboot`.
+  `90-dualboot` reimplements it as `dotfiles/fish/functions/winboot.fish`,
+  resolving the boot entry at call time rather than hardcoding an index
+  (see §10).
 - `.gitconfig` → `dotfiles/git/gitconfig`, with `[user]` removed and rendered
   from local config instead; alias set kept verbatim.
 - `printing/`, `sharedalbum/`, `videos/` → `tools/`, with their READMEs intact
@@ -228,13 +237,26 @@ the strategy is layered rather than exhaustive.
 
 Recorded because they are easy to forget and painful to discover late:
 
-- **`winboot` is not portable.** It currently hardcodes `efibootmgr
-  --bootnext 0001`. That index is this machine's EFI NVRAM slot and will differ
-  after reinstall. The replacement must resolve the Windows entry dynamically.
-- **GRUB's hidden menu with `GRUB_TIMEOUT=0`** makes a dual-boot machine hard
-  to recover if the EFI entry is wrong. The `90-dualboot` module must apply the
-  `winboot` function before hiding the menu, and the README must say how to
-  reach GRUB with a held key.
+- **The existing `winboot` hardcodes an EFI slot index.** `Boot0001` is indeed
+  Windows Boot Manager on this machine today (`Boot0002` is Ubuntu), but the
+  firmware re-enumerates NVRAM slots on reinstall, so the number will likely be
+  wrong afterward. The replacement resolves the entry at call time by matching
+  the `Windows Boot Manager` line in `efibootmgr` output, and `90-dualboot`
+  installs the function only if such an entry exists. Note that `--bootnext` is
+  one-shot and self-clearing: a wrong value cannot do lasting harm, so the
+  failure mode is a temporarily unreachable Windows, not a broken machine.
+- **GRUB currently has no Windows entry at all.** `os-prober` is installed, but
+  Ubuntu has defaulted `GRUB_DISABLE_OS_PROBER` to `true` since 22.04, so it
+  never runs and GRUB never discovered Windows — the real menu holds only
+  Ubuntu, Advanced options, memtest, and UEFI Firmware Settings. Combined with
+  `GRUB_TIMEOUT_STYLE=hidden` and `GRUB_TIMEOUT=0`, that leaves the firmware
+  hotkey as the sole fallback whenever `winboot` fails. `90-dualboot` therefore
+  sets `GRUB_DISABLE_OS_PROBER=false` so Windows becomes a real menu entry,
+  reachable by holding `Esc` or `Shift` — needing neither sudo nor a hardcoded
+  index, and surviving reinstalls. The README must document the held key.
+  (Ubuntu's own comment beside that setting warns os-prober can damage guest
+  OSes by mounting their disks; irrelevant here now that virtualization is
+  dropped.)
 - **The NAS unit depends on a key that must already be authorized** on the NAS
   before the mount can succeed. The module therefore prints the public key and
   verifies connectivity with a probe before enabling the unit.
@@ -258,15 +280,22 @@ Work the plan will need to do that this design does not specify in full:
    filtered `apt-mark showmanual`, the real (non-dependency) snaps,
    `code --list-extensions`, `asdf plugin list`, and a `dconf dump` of the
    terminal profile. These are data-gathering steps, not design decisions.
-2. Decide the `winboot` resolution strategy (see §10).
+   **This must also commit the live `~/.config/fish/config.fish`**, which §9
+   names as the migration source — the wipe destroys it, so capturing it is a
+   hard prerequisite rather than a convenience. Same for `~/.gitconfig` and
+   `~/.ssh/config` if they have likewise drifted from their committed copies.
+2. Order `90-dualboot`'s steps so `GRUB_DISABLE_OS_PROBER=false` is written,
+   `update-grub` has run, and the Windows menu entry is verified present
+   *before* the hidden-menu settings are applied. Hiding the menu first would
+   leave a window in which there is neither a visible menu nor a Windows entry.
 3. Write the engine before any module, so modules can be pure data where
    possible.
 
 ## 12. Revision log
 
-**2026-10-16** — reviewed the `30-dev`, `40-desktop`, and `50-media` catalogs
-against the current machine's actual state rather than its `apt-mark showmanual`
-output, and corrected the target release.
+**2026-10-16** — reviewed the `30-dev`, `40-desktop`, `50-media`, and
+`90-dualboot` catalogs against the current machine's actual state rather than
+its `apt-mark showmanual` output, and corrected the target release.
 
 | Change | Reason |
 |---|---|
@@ -279,3 +308,7 @@ output, and corrected the target release.
 | `50-media`: ffmpeg and mkvtoolnix **kept** | Not made redundant by VLC — `tools/videos/` calls both CLIs by name |
 | `50-media`: weasyprint **dropped** | Nothing in the repo references it; pandoc + texlive already cover document→PDF, and `uv` is the better home for a Python tool |
 | `50-media`: qgis and librecad **dropped** | Not wanted. A `qgis/qgis` Docker image is already in use if needed |
+| `90-dualboot`: `winboot` **rewritten** to resolve the EFI entry at call time, installed only when a Windows entry exists | The live alias hardcodes `Boot0001`, which the firmware will likely re-enumerate on reinstall |
+| `90-dualboot`: **os-prober enabled** (`GRUB_DISABLE_OS_PROBER=false`) | Gives Windows a real GRUB menu entry, so the fallback needs neither sudo nor a hardcoded index. This is the fix rather than the workaround, and it downgrades §10's GRUB bullet from a recovery hazard to documented behavior |
+| §9: migration source corrected to the **live** fish config | `winboot` and three toolchain lines exist only on the machine; the committed `config.fish` has diverged and is stale. The spec previously described the machine while claiming to describe the repo |
+| §10: GRUB hazard wording **corrected** | The original "hard to recover" overstated the risk — `--bootnext` is one-shot and self-clearing, so the real cost is a temporarily unreachable Windows |
