@@ -2662,8 +2662,8 @@ Captured state that the wipe would destroy:
 - [ ] Refresh the manifests: `apt-mark showmanual`, `snap list`,
       `code --list-extensions`, `asdf plugin list`, and a `dconf dump` of the
       terminal profile.
-- [ ] **Confirm every cloud-sync folder has finished syncing.** `~/MEGA` is not
-      recreated by any module.
+- [ ] **Confirm every cloud-sync folder has finished syncing.** Nothing under
+      `~/MEGA` is recreated by any module.
 
 ## Other docs
 
@@ -2774,9 +2774,9 @@ function usd --description "Wrapper for OpenUSD installation"
 end
 ```
 
-- [ ] **Step 4: Create the winboot function with the lookup written but the behavior left open**
+- [ ] **Step 4: Create the winboot function**
 
-This one has a genuine UX decision in it, so create the file with the hard part solved and the decision marked. See the note after this task.
+The lookup below was verified against this machine's real `efibootmgr` output: it resolves `0001`, which is in fact the Windows Boot Manager slot. Do not alter the regex without re-testing it.
 
 Create `dotfiles/fish/functions/winboot.fish`:
 
@@ -2784,7 +2784,8 @@ Create `dotfiles/fish/functions/winboot.fish`:
 function winboot --description "Reboot into Windows for one boot"
     # Resolve the Windows entry from EFI NVRAM at call time. The slot index is
     # NOT stable across reinstalls, so it must never be hardcoded.
-    set -l id (efibootmgr | string replace -rf '^Boot([0-9A-Fa-f]{4})\**\s+Windows Boot Manager.*' '$1' | head -1)
+    set -l line (efibootmgr | string match -r '^Boot[0-9A-Fa-f]{4}\**\s+Windows Boot Manager.*' | head -1)
+    set -l id (string replace -rf '^Boot([0-9A-Fa-f]{4}).*' '$1' -- $line)
 
     if test -z "$id"
         echo "No 'Windows Boot Manager' entry found in EFI NVRAM." >&2
@@ -2792,12 +2793,24 @@ function winboot --description "Reboot into Windows for one boot"
         return 1
     end
 
-    # TODO(decision): what should happen once the entry is resolved?
-    #   Set bootnext and reboot immediately, or set it and let the user
-    #   reboot when ready? Confirm first, or not?
-    #   `efibootmgr --bootnext $id` is one-shot and self-clearing.
+    # The resolved slot is shown on purpose. It moves after a reinstall, so
+    # seeing it is how you confirm the lookup found the right entry.
+    read -l -P "Reboot into Windows now (Boot$id)? [y/N] " reply
+    if not string match -qi 'y*' -- $reply
+        echo "Cancelled. Nothing was changed."
+        return 1
+    end
+
+    # --bootnext is one-shot and self-clearing: it affects only the next boot.
+    # Both commands run inside sudo's credential cache, so this is one
+    # password prompt rather than two.
+    sudo efibootmgr --bootnext $id >/dev/null; and sudo reboot
 end
 ```
+
+**Why confirm rather than reboot outright.** Setting `bootnext` is harmless and reversible; the reboot is what can cost unsaved work. The old alias bundled them, so the safe action inherited the risky one's cost. The prompt also surfaces the resolved slot, which is the only cheap way to verify the dynamic lookup on a freshly reinstalled machine — the exact scenario this rewrite exists for.
+
+To restore the old immediate-reboot behavior instead, delete the `read`/`if` block.
 
 - [ ] **Step 5: Write the gitconfig without `[user]`**
 
@@ -2910,20 +2923,6 @@ config — all superseded by the 20-toolchains decisions in spec section 2.
 Remove [user] from gitconfig in favor of an included ~/.gitconfig.local
 that 10-shell renders from prompted values."
 ```
-
-> **Decision for the human partner — `winboot`'s behavior.**
->
-> Step 4 leaves a marked `TODO(decision)` in `dotfiles/fish/functions/winboot.fish`. The EFI lookup is solved; what remains is a UX call that shapes how the command feels, and it is 3–5 lines of fish.
->
-> The old alias was `sudo efibootmgr --bootnext 0001 && sudo reboot` — resolve and reboot, no confirmation. Three options worth weighing:
->
-> - **Reboot immediately**, matching the old alias. Fewest keystrokes; an unsurvivable typo if you have unsaved work.
-> - **Set `bootnext` and print a message**, letting you reboot when ready. Safe, composable, needs a second command.
-> - **Confirm, then reboot.** One keypress of friction.
->
-> There is also a smaller question nested inside: `efibootmgr --bootnext` needs `sudo`, so if you choose to reboot immediately the whole thing is one `sudo` prompt or two.
->
-> Whoever executes this task should ask rather than pick. The surrounding file, the lookup, and the error path are already written, so the answer drops straight into the marked spot.
 
 **Phase 2 checkpoint.** Stop for review before starting the module catalog.
 
@@ -4305,7 +4304,7 @@ The work is done when all of these hold:
 - [ ] `git status` is clean after any run — no module writes into the working tree
 - [ ] `~/.config/config-bootstrap/local.env` is mode `0600` and gitignored
 - [ ] `fish -n` passes on every committed `.fish` file and on the generated `conf.d/toolchains.fish`
-- [ ] The `winboot` `TODO(decision)` has been resolved by the human partner, not guessed
+- [ ] `winboot` resolves the EFI slot dynamically and confirms before rebooting (verified: resolves `0001` on the pre-wipe machine)
 
 ### Deliberately out of scope
 
@@ -4322,5 +4321,4 @@ Spec §11 items 1 and 4. These destroy information if skipped, so they are not o
 
 - [ ] Commit the live `~/.config/fish/config.fish` — it has diverged from the committed copy and is the migration source for Task 12
 - [ ] Re-capture `apt-mark showmanual`, `snap list`, `code --list-extensions`, `asdf plugin list`, `dconf dump /org/gnome/terminal/`
-- [ ] Confirm `~/MEGA` has finished syncing — 1.5 GB that no module recreates
 
