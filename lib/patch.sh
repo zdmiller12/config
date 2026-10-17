@@ -52,16 +52,19 @@ patch_write_if_different() {
     local dir
     dir=$(dirname "$file")
     if _patch_needs_sudo "$file"; then
-        sudo install -d -m 0755 "$dir"
+        run_sudo install -d -m 0755 "$dir"
         printf '%s\n' "$content" | sudo tee "$file" > /dev/null
     else
-        mkdir -p "$dir"
+        run mkdir -p "$dir"
         printf '%s\n' "$content" > "$file"
     fi
 }
 
 # patch_kv_set FILE KEY VALUE — section-less KEY=VALUE files.
 # Replaces the key whether it is active or commented out; appends if absent.
+# KEY is interpolated unescaped into an awk regex, so it must be a plain
+# identifier (alphanumerics and underscores) — a key containing ., *, or [
+# would silently fail to match and be appended as a duplicate.
 patch_kv_set() {
     local file=$1 key=$2 value=$3 content
     [[ -f $file ]] || { patch_write_if_different "$file" "$key=$value"; return 0; }
@@ -82,6 +85,9 @@ patch_kv_set() {
 
 # patch_ini_set FILE SECTION KEY VALUE — sectioned INI files.
 # Creates the section if it is absent; only touches the key inside SECTION.
+# KEY is interpolated unescaped into an awk regex, so it must be a plain
+# identifier (alphanumerics and underscores) — a key containing ., *, or [
+# would silently fail to match and be appended as a duplicate.
 patch_ini_set() {
     local file=$1 section=$2 key=$3 value=$4 content
     if [[ ! -f $file ]]; then
