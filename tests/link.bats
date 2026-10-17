@@ -78,3 +78,24 @@ EOF
     link_manifest links "$TMPTEST/repo"
     [ -L "$TMPTEST/fakehome/.config/app/file.conf" ]
 }
+
+@test "link_file sets LINK_RESULT=unchanged on error path" {
+    # Successful call
+    link_file "$TMPTEST/repo/file.conf" "$TMPTEST/dest/file.conf"
+    [ "$LINK_RESULT" = changed ]
+    # Failed call with missing source in same shell
+    status=0
+    link_file "$TMPTEST/repo/absent.conf" "$TMPTEST/dest/x.conf" || status=$?
+    [ "$status" -ne 0 ]
+    [ "$LINK_RESULT" = unchanged ]
+}
+
+@test "link_manifest handles final line without trailing newline" {
+    printf 'second\n' > repo/second.conf
+    # Deliberately construct manifest with final line lacking newline
+    printf 'file.conf    %s/dest/one.conf\n' "$TMPTEST" > links
+    printf 'second.conf  %s/dest/two.conf' "$TMPTEST" >> links
+    link_manifest links "$TMPTEST/repo"
+    [ -L "$TMPTEST/dest/one.conf" ]
+    [ -L "$TMPTEST/dest/two.conf" ]
+}

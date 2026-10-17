@@ -10,6 +10,7 @@ link_file() {
     local src=$1 dest=$2
     if [[ ! -e $src ]]; then
         log_error "link source does not exist: $src"
+        LINK_RESULT=unchanged
         return 1
     fi
     if [[ -L $dest ]]; then
@@ -31,10 +32,10 @@ link_file() {
 link_manifest() {
     local manifest=$1 root=$2
     local rel dest
-    while read -r rel dest _; do
+    while read -r rel dest _ || [[ -n $rel ]]; do
         [[ -z $rel || $rel == \#* ]] && continue
         [[ -z $dest ]] && { log_error "manifest line has no destination: $rel"; continue; }
         dest=${dest/#\~/$HOME}
-        link_file "$root/$rel" "$dest" || log_error "could not link $rel"
+        link_file "$root/$rel" "$dest" || true
     done < "$manifest"
 }
