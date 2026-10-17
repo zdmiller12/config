@@ -30,6 +30,7 @@ them:
 | Self-hosted services | Dropped | apache2, postfix, redis-server, jackett, teamviewerd are not reproduced; README records the decision |
 | Flatpak | Dropped | `pkg.sh` handles snap only; no `flatpak` manifest type; Flatseal and Packet are not reproduced |
 | Virtualization | Dropped | qemu/libvirt/virt-manager are not reproduced — the native Windows dual-boot serves that need better. `docs/virtualization.md` records the non-obvious setup steps |
+| MegaSync and ProtonVPN | Dropped | Not reproduced by bootstrap. Both are installed and in use today, so each becomes a manual post-install step rather than an automated one. The `fs.inotify.max_user_watches` sysctl drop-in goes with MegaSync |
 | Toolchains | asdf for node/ruby/terraform; pyenv for Python; uv for Python tools; rustup for Rust | Removes the duplicate Node managers, `rbenv`, and `tfenv` |
 | Identity and secrets | Prompted on first run, written to a gitignored local file | Nothing personal is committed; SSH keys are generated, never copied |
 
@@ -81,7 +82,7 @@ templates at run time using the local config, not committed pre-filled.
 | `10-shell` | on | fish, fisher, the dotfile symlinks, git identity prompt, SSH key generation, `chsh` to fish |
 | `20-toolchains` | on | asdf with node/ruby/terraform plugins, pyenv + pyenv-virtualenv, uv, rustup, and the fish init blocks for each |
 | `30-dev` | on | VSCode via Microsoft repo plus the extension set, Docker CE via Docker repo |
-| `40-desktop` | on | brave, qbittorrent, kdeconnect, megasync (with its `fs.inotify.max_user_watches` sysctl), protonvpn, fonts, GNOME settings (dark theme, window buttons, terminal profile) |
+| `40-desktop` | on | brave, qbittorrent, kdeconnect, fonts, GNOME settings (dark theme, window buttons, terminal profile) |
 | `50-media` | on | ffmpeg, mkvtoolnix and mkvtoolnix-gui, VLC via snap, inkscape, pandoc, texlive, exif, webp |
 | `60-nas` | off | sshfs, the `mnt-nas-photos` systemd unit rendered from prompted host/path/key, and mountpoint creation |
 | `90-bluetooth-autoreconnect` | off | `AutoEnable=true` in `/etc/bluetooth/main.conf` `[Policy]`, `UserspaceHID=true` in `/etc/bluetooth/input.conf` `[General]`, restart bluetooth |
@@ -264,13 +265,14 @@ Recorded because they are easy to forget and painful to discover late:
   confined VLC; `60-nas` mounts under `/mnt`. Without the `removable-media`
   interface connected, VLC cannot see NAS files and fails in a way that looks
   like a mount problem rather than a confinement problem.
-- **An LTS target lowers third-party repo risk without removing it.** MegaSync
-  pins to an explicit `xUbuntu_<version>` path and ProtonVPN keys to the release
-  codename; both publish for a new LTS weeks to months after release, and 26.04
-  is recent. They are the likeliest failures and are grouped in `40-desktop` so
-  the failure stays localized. Docker also keys to the codename but publishes
-  promptly for LTS releases. The Microsoft (VSCode) and Brave repos are not
-  codename-keyed and carry no release-timing risk.
+- **Third-party repo risk is now small.** Dropping MegaSync and ProtonVPN
+  removed both of the release-timing risks: MegaSync pinned an explicit
+  `xUbuntu_<version>` path and ProtonVPN keyed to the release codename, and
+  both lag a new LTS by weeks to months. Of the three repos that remain, only
+  Docker's is codename-keyed, and it publishes promptly for LTS releases; the
+  Microsoft (VSCode) and Brave repos are not codename-keyed at all. The
+  per-package failure tolerance in §7 stays regardless — it costs nothing, and
+  the 24.04→26.04 jump can still rename a stock package.
 
 ## 11. Implementation notes for the plan
 
@@ -290,6 +292,12 @@ Work the plan will need to do that this design does not specify in full:
    leave a window in which there is neither a visible menu nor a Windows entry.
 3. Write the engine before any module, so modules can be pure data where
    possible.
+4. Confirm `~/MEGA` is fully synced to the cloud before the wipe. MegaSync is
+   running and syncing 1.5 GB there today, and bootstrap no longer installs or
+   configures it — so no module recreates that folder, and the wipe is
+   unrecoverable. The same check applies to any other cloud-sync directory.
+   This is a data-safety precondition, not a bootstrap step, and it belongs in
+   the README's pre-wipe checklist alongside the captures in item 1.
 
 ## 12. Revision log
 
@@ -308,6 +316,7 @@ its `apt-mark showmanual` output, and corrected the target release.
 | `50-media`: ffmpeg and mkvtoolnix **kept** | Not made redundant by VLC — `tools/videos/` calls both CLIs by name |
 | `50-media`: weasyprint **dropped** | Nothing in the repo references it; pandoc + texlive already cover document→PDF, and `uv` is the better home for a Python tool |
 | `50-media`: qgis and librecad **dropped** | Not wanted. A `qgis/qgis` Docker image is already in use if needed |
+| `40-desktop`: MegaSync and ProtonVPN **dropped** | Removed from bootstrap entirely. Both are in use today, so each becomes a manual post-install step; the `fs.inotify.max_user_watches` sysctl drop-in goes with MegaSync. This also removes both of §10's release-timing risks and leaves `40-desktop` with one non-codename-keyed repo (Brave) |
 | `90-dualboot`: `winboot` **rewritten** to resolve the EFI entry at call time, installed only when a Windows entry exists | The live alias hardcodes `Boot0001`, which the firmware will likely re-enumerate on reinstall |
 | `90-dualboot`: **os-prober enabled** (`GRUB_DISABLE_OS_PROBER=false`) | Gives Windows a real GRUB menu entry, so the fallback needs neither sudo nor a hardcoded index. This is the fix rather than the workaround, and it downgrades §10's GRUB bullet from a recovery hazard to documented behavior |
 | §9: migration source corrected to the **live** fish config | `winboot` and three toolchain lines exist only on the machine; the committed `config.fish` has diverged and is stale. The spec previously described the machine while claiming to describe the repo |
