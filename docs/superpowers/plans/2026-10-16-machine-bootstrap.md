@@ -657,7 +657,14 @@ PATCH_RESULT=unchanged
 _patch_needs_sudo() {
     local file=$1 dir
     dir=$(dirname "$file")
-    [[ -d $dir && -w $dir ]] || return 0
+    # Walk up to the nearest existing ancestor; missing parents will be
+    # created under the same permissions as that ancestor. Checking only the
+    # immediate parent wrongly demands sudo when intermediate directories do
+    # not exist yet. Terminates because `dirname /` is `/`.
+    while [[ ! -d $dir ]]; do
+        dir=$(dirname "$dir")
+    done
+    [[ -w $dir ]] || return 0
     [[ ! -e $file || -w $file ]] || return 0
     return 1
 }
