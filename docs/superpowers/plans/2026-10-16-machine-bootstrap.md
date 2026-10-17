@@ -699,10 +699,10 @@ patch_write_if_different() {
     local dir
     dir=$(dirname "$file")
     if _patch_needs_sudo "$file"; then
-        sudo install -d -m 0755 "$dir"
+        run_sudo install -d -m 0755 "$dir"
         printf '%s\n' "$content" | sudo tee "$file" > /dev/null
     else
-        mkdir -p "$dir"
+        run mkdir -p "$dir"
         printf '%s\n' "$content" > "$file"
     fi
 }
