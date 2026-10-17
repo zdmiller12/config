@@ -52,3 +52,9 @@ teardown() { teardown_tmpdir; }
     output="$(ui_pause "Add the key to GitHub" 2>&1)"
     [[ $output == *"Add the key to GitHub"* ]]
 }
+
+@test "ui_prompt is immune to lowercase variable-name collisions" {
+    unset value
+    ui_prompt value "prompt text" "the-default"
+    [ "$value" = "the-default" ]
+}
