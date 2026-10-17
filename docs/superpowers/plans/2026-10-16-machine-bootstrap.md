@@ -906,6 +906,9 @@ link_file() {
     local src=$1 dest=$2
     if [[ ! -e $src ]]; then
         log_error "link source does not exist: $src"
+        # Every exit path must set LINK_RESULT: link_manifest calls this
+        # repeatedly in one process, so a stale value would misreport.
+        LINK_RESULT=unchanged
         return 1
     fi
     if [[ -L $dest ]]; then
@@ -927,11 +930,15 @@ link_file() {
 link_manifest() {
     local manifest=$1 root=$2
     local rel dest
-    while read -r rel dest _; do
+    # `|| [[ -n $rel ]]` so a final line with no trailing newline is not
+    # silently dropped — that would leave a dotfile unlinked with no error.
+    while read -r rel dest _ || [[ -n $rel ]]; do
         [[ -z $rel || $rel == \#* ]] && continue
         [[ -z $dest ]] && { log_error "manifest line has no destination: $rel"; continue; }
         dest=${dest/#\~/$HOME}
-        link_file "$root/$rel" "$dest" || log_error "could not link $rel"
+        # link_file already logs the failure; the guard only keeps one bad
+        # entry from aborting the whole manifest.
+        link_file "$root/$rel" "$dest" || true
     done < "$manifest"
 }
 ```
@@ -2930,7 +2937,9 @@ Append to `tests/link.bats`:
 @test "the real dotfiles manifest references files that exist" {
     manifest="$REPO_ROOT/dotfiles/links"
     [ -f "$manifest" ]
-    while read -r rel dest _; do
+    # `|| [[ -n $rel ]]` so a final line with no trailing newline is not
+    # silently dropped — that would leave a dotfile unlinked with no error.
+    while read -r rel dest _ || [[ -n $rel ]]; do
         [[ -z $rel || $rel == \#* ]] && continue
         [ -e "$REPO_ROOT/dotfiles/$rel" ] || {
             echo "manifest references a missing file: $rel"
