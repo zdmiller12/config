@@ -66,3 +66,49 @@ teardown() { teardown_tmpdir; }
     output="$(pkg_snap_connect vlc camera 2>&1)"
     [[ $output == *"snap connect vlc:camera"* ]]
 }
+
+@test "pkg_snap_install isolates a failing snap and keeps installing the rest" {
+    DRY_RUN=0
+    mkdir -p "$TMPTEST/bin"
+    CALLS_LOG="$TMPTEST/snap.calls"
+    : > "$CALLS_LOG"
+    export CALLS_LOG
+    # Stub snap: list reports "installed-snap" as installed; install fails
+    # for "badpkg" and succeeds for others. Every invocation is logged
+    # so we can confirm the other snaps were still attempted.
+    cat > "$TMPTEST/bin/snap" <<'STUB'
+#!/usr/bin/env bash
+case "$1" in
+  list)
+    echo "$2" >> "$CALLS_LOG"
+    [[ ${2:-} == installed-snap ]] && exit 0
+    exit 1
+    ;;
+  install)
+    echo "$*" >> "$CALLS_LOG"
+    shift 1
+    [[ $1 == badpkg ]] && exit 1
+    exit 0
+    ;;
+  connections)
+    printf 'Interface        Plug          Slot   Notes\n'
+    printf 'removable-media  %s:removable-media  :removable-media  -\n' "${2:-x}"
+    ;;
+esac
+exit 0
+STUB
+    chmod +x "$TMPTEST/bin/snap"
+    PATH="$TMPTEST/bin:$PATH"
+    sudo() { "$@"; }
+
+    local result
+    pkg_snap_install git badpkg curl
+    result=$?
+
+    [ "$result" -eq 0 ]
+    [ "${#PKG_FAILED[@]}" -eq 1 ]
+    [[ "${PKG_FAILED[0]}" == "badpkg" ]]
+    grep -q '^install git$' "$CALLS_LOG"
+    grep -q '^install badpkg$' "$CALLS_LOG"
+    grep -q '^install curl$' "$CALLS_LOG"
+}

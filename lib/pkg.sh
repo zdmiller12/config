@@ -33,7 +33,10 @@ pkg_snap_install() {
 # In `snap connections` output, column 3 is the slot: "-" means disconnected.
 pkg_snap_connect() {
     local snap=$1 iface=$2
-    pkg_snap_available || return 0
+    if ! pkg_snap_available; then
+        log_warn "snap is not available; skipping: $snap:$iface"
+        return 0
+    fi
     if snap connections "$snap" 2> /dev/null \
         | awk -v i="$iface" '$1 == i && $3 != "-" { found = 1 } END { exit !found }'; then
         log_info "$snap:$iface is already connected"
