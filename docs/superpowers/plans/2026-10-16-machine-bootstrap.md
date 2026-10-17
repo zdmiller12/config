@@ -1526,10 +1526,11 @@ ui_checklist() {
     for n in "${toggles[@]:-}"; do
         [[ $n =~ ^[0-9]+$ ]] || continue
         (( n >= 1 && n <= ${#tags[@]} )) || continue
-        if [[ ${states[$((n - 1))]} == on ]]; then
-            states[$((n - 1))]=off
+        # Array subscripts are already arithmetic context, so no $(( )).
+        if [[ ${states[n-1]} == on ]]; then
+            states[n-1]=off
         else
-            states[$((n - 1))]=on
+            states[n-1]=on
         fi
     done
     for i in "${!tags[@]}"; do
@@ -1539,23 +1540,27 @@ ui_checklist() {
 }
 
 # ui_prompt VARNAME PROMPT [DEFAULT]
+# The locals carry a _ui_ prefix deliberately: a caller passing `var`,
+# `prompt`, `default` or `value` as VARNAME would otherwise have the
+# assignment land on this function's own shadow and vanish on return,
+# silently breaking local.env persistence for that variable.
 ui_prompt() {
-    local var=$1 prompt=$2 default=${3:-} value
-    value=${!var:-}
-    if [[ -n $value ]]; then
+    local _ui_var=$1 _ui_prompt=$2 _ui_default=${3:-} _ui_value
+    _ui_value=${!_ui_var:-}
+    if [[ -n $_ui_value ]]; then
         return 0
     fi
     if (( ASSUME_YES )) || ! ui_has_tty; then
-        value=$default
+        _ui_value=$_ui_default
     elif ui_has_whiptail; then
-        value=$(whiptail --title "Bootstrap" --inputbox "$prompt" 10 70 "$default" 3>&1 1>&2 2>&3) \
-            || value=$default
+        _ui_value=$(whiptail --title "Bootstrap" --inputbox "$_ui_prompt" 10 70 "$_ui_default" 3>&1 1>&2 2>&3) \
+            || _ui_value=$_ui_default
     else
-        read -r -p "$prompt [$default]: " value
-        [[ -z $value ]] && value=$default
+        read -r -p "$_ui_prompt [$_ui_default]: " _ui_value
+        [[ -z $_ui_value ]] && _ui_value=$_ui_default
     fi
-    printf -v "$var" '%s' "$value"
-    export "${var?}"
+    printf -v "$_ui_var" '%s' "$_ui_value"
+    export "${_ui_var?}"
 }
 
 # ui_pause MESSAGE
