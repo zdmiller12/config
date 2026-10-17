@@ -99,14 +99,36 @@ Nothing else can be verified until this exists. `bats` and `shellcheck` are **no
 - Consumes: nothing.
 - Produces: `load_lib <name>` — sources `lib/<name>.sh` into a test; `setup_tmpdir` — creates `$TMPTEST` and `cd`s into it; `teardown_tmpdir` — removes it. Every later test file uses these.
 
-- [ ] **Step 1: Install the dev dependencies**
+- [ ] **Step 1: Install the dev dependencies, user-locally**
+
+Installed **without sudo**, into `~/.local/bin`. This session cannot read a sudo password non-interactively, and the dev tools do not need system-wide installation. Both commands below are verified working on this machine.
 
 ```bash
-sudo apt-get update && sudo apt-get install -y bats shellcheck
-bats --version && shellcheck --version
+mkdir -p ~/.local/bin
+export PATH="$HOME/.local/bin:$PATH"
+
+# bats-core from source
+if [ ! -x ~/.local/bin/bats ]; then
+  tmp=$(mktemp -d)
+  git clone --quiet --depth 1 https://github.com/bats-core/bats-core.git "$tmp/bats-src"
+  (cd "$tmp/bats-src" && ./install.sh "$HOME/.local")
+fi
+
+# shellcheck static release binary
+if [ ! -x ~/.local/bin/shellcheck ]; then
+  tmp=$(mktemp -d)
+  curl -fsSL https://github.com/koalaman/shellcheck/releases/download/stable/shellcheck-stable.linux.x86_64.tar.xz \
+    -o "$tmp/sc.tar.xz"
+  tar -xJf "$tmp/sc.tar.xz" -C "$tmp"
+  install -m 0755 "$tmp/shellcheck-stable/shellcheck" ~/.local/bin/shellcheck
+fi
+
+bats --version && shellcheck --version | head -2
 ```
 
-Expected: bats 1.10 or newer, shellcheck 0.9 or newer.
+Expected: `Bats 1.14.0` or newer, `version: 0.11.0` or newer.
+
+**Every later task must `export PATH="$HOME/.local/bin:$PATH"`** before running `bats` or `shellcheck`. CI still installs them via apt, where sudo works non-interactively.
 
 - [ ] **Step 2: Write the test helper**
 
@@ -1999,6 +2021,10 @@ setup() {
     setup_tmpdir
     BOOTSTRAP_NO_MAIN=1
     export BOOTSTRAP_NO_MAIN
+    # preflight calls log_error, and bootstrap.sh only sources the libraries
+    # inside main() — which BOOTSTRAP_NO_MAIN suppresses. Load log.sh first.
+    load_lib log
+    RUN_STAMP="test"
     # shellcheck disable=SC1090
     source "$REPO_ROOT/bootstrap.sh"
     DRY_RUN=0
@@ -2078,17 +2104,24 @@ teardown() { teardown_tmpdir; }
 }
 
 @test "preflight refuses to run as root" {
-    EUID=0
+    # EUID is readonly in bash, so preflight reads BOOTSTRAP_UID as an
+    # override seam. Verified: `EUID=0` fails with "readonly variable".
+    BOOTSTRAP_UID=0
     status=0
     preflight 2>/dev/null || status=$?
     [ "$status" -ne 0 ]
+}
+
+@test "preflight passes for a normal user on a Debian-family system" {
+    BOOTSTRAP_UID=1000
+    preflight > /dev/null 2>&1
 }
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
 
 Run: `bats tests/bootstrap.bats`
-Expected: all 12 FAIL — `bootstrap.sh` does not exist.
+Expected: all 13 FAIL — `bootstrap.sh` does not exist.
 
 - [ ] **Step 3: Write the implementation**
 
@@ -2200,7 +2233,9 @@ parse_args() {
 }
 
 preflight() {
-    if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
+    # BOOTSTRAP_UID is an override seam for the tests: EUID is readonly in
+    # bash, so a test cannot assign it to simulate root.
+    if [[ ${BOOTSTRAP_UID:-$(id -u)} -eq 0 ]]; then
         log_error "Refusing to run as root. Run as your normal user; sudo is called per command."
         return 1
     fi
@@ -2328,7 +2363,7 @@ chmod +x bootstrap.sh
 bats tests/bootstrap.bats
 ```
 
-Expected: 12 tests, 12 passing.
+Expected: 13 tests, 13 passing.
 
 - [ ] **Step 5: Create a fixture module and prove the whole engine drives it**
 
