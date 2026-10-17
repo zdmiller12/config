@@ -14,8 +14,14 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y shellcheck
       - name: Shellcheck the engine and all module setup scripts
         run: |
-          shellcheck bootstrap.sh
-          shellcheck lib/*.sh
+          for f in bootstrap.sh; do
+            [ -e "$f" ] || continue
+            shellcheck "$f"
+          done
+          for f in lib/*.sh; do
+            [ -e "$f" ] || continue
+            shellcheck "$f"
+          done
           # Modules are sourced with the engine's helpers already defined,
           # so tell shellcheck not to flag those as undefined.
           for f in modules/*/setup.sh; do
