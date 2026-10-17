@@ -70,3 +70,36 @@ teardown() { teardown_tmpdir; }
     output="$(summary_print)"
     [[ $output == *"Add the SSH key to GitHub"* ]]
 }
+
+@test "log_init creates the log directory if absent" {
+    LOG_DIR="$TMPTEST/new-cache"
+    log_init
+    [ -d "$LOG_DIR" ]
+}
+
+@test "log_init sets LOG_FILE to correct path with run-<stamp>.log format" {
+    LOG_DIR="$TMPTEST/cache-dir"
+    log_init
+    [[ $LOG_FILE == "$LOG_DIR/run-"* ]]
+    [[ $LOG_FILE == *".log" ]]
+}
+
+@test "log_init creates a log file" {
+    LOG_DIR="$TMPTEST/logdir"
+    log_init
+    [ -f "$LOG_FILE" ]
+}
+
+@test "log_init file accepts subsequent log_info messages" {
+    LOG_DIR="$TMPTEST/logs"
+    log_init
+    log_info "test message"
+    grep -q "test message" "$LOG_FILE"
+}
+
+@test "summary_add with unrecognized status is surfaced loudly" {
+    summary_add invalid-status my-module
+    output="$(summary_print 2>&1)" || true
+    [[ $output == *"my-module"* ]]
+    [[ $output == *"unrecognized status"* ]]
+}

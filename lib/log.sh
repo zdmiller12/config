@@ -70,6 +70,7 @@ summary_print() {
             ok)      log_ok      "$module${detail:+ — $detail}" ;;
             changed) log_info    "$module changed${detail:+ — $detail}" ;;
             failed)  log_error   "$module failed${detail:+ — $detail}"; failed=1 ;;
+            *)       log_error   "$module (unrecognized status: $status)${detail:+ — $detail}"; failed=1 ;;
         esac
     done
     if (( ${#SUMMARY_NOTES[@]} )); then
