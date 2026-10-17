@@ -32,9 +32,9 @@ apt_add_repo() {
             _log CMD '' "fetch keyring for $name"
             local tmp
             tmp=$(mktemp)
-            if ! curl -fsSL "$key_url" -o "$tmp"; then
+            if ! run curl -fsSL "$key_url" -o "$tmp"; then
                 log_error "could not download keyring for $name"
-                rm -f "$tmp"
+                run rm -f "$tmp"
                 return 1
             fi
             # Vendors are inconsistent: Microsoft and Docker publish an
@@ -42,14 +42,11 @@ apt_add_repo() {
             # Dearmor only the former — doing it unconditionally corrupts
             # the latter.
             if head -c 64 "$tmp" | grep -q 'BEGIN PGP'; then
-                # shellcheck disable=SC2024
-                # The redirect is opened by us (we already own $tmp); sudo
-                # only elevates gpg, which is what we want here.
-                sudo gpg --dearmor -o "$keyring" < "$tmp"
+                run_sudo gpg --dearmor -o "$keyring" < "$tmp"
             else
-                sudo install -m 0644 "$tmp" "$keyring"
+                run_sudo install -m 0644 "$tmp" "$keyring"
             fi
-            rm -f "$tmp"
+            run rm -f "$tmp"
         fi
         apt_mark_stale
     fi

@@ -114,3 +114,53 @@ STUB
     apt_add_repo example https://example.invalid/key.asc 'deb https://example.invalid/apt stable main'
     [ "$APT_UPDATED" -eq 1 ]
 }
+
+@test "apt_install isolates a failing package and keeps installing the rest" {
+    DRY_RUN=0
+    mkdir -p "$TMPTEST/bin"
+    CALLS_LOG="$TMPTEST/apt-get.calls"
+    : > "$CALLS_LOG"
+    export CALLS_LOG
+    # Stub apt-get: the batch call (more than one package) always fails;
+    # individual calls fail only for "badpkg". Every invocation is logged
+    # so we can confirm the other packages were still attempted.
+    cat > "$TMPTEST/bin/apt-get" <<'STUB'
+#!/usr/bin/env bash
+echo "$*" >> "$CALLS_LOG"
+case "$1" in
+  update) exit 0 ;;
+  install)
+    shift 2
+    if [[ $# -gt 1 ]]; then
+      exit 1
+    fi
+    [[ $1 == badpkg ]] && exit 1
+    exit 0
+    ;;
+esac
+STUB
+    chmod +x "$TMPTEST/bin/apt-get"
+    PATH="$TMPTEST/bin:$PATH"
+    sudo() { "$@"; }
+
+    local result
+    apt_install git badpkg curl
+    result=$?
+
+    [ "$result" -eq 0 ]
+    [ "${#APT_FAILED[@]}" -eq 1 ]
+    [[ "${APT_FAILED[0]}" == "badpkg" ]]
+    grep -q '^install -y git$' "$CALLS_LOG"
+    grep -q '^install -y badpkg$' "$CALLS_LOG"
+    grep -q '^install -y curl$' "$CALLS_LOG"
+}
+
+@test "apt_add_repo under dry-run touches neither keyring nor sources file" {
+    SOURCES_DIR="$TMPTEST/sources"
+    KEYRING_DIR="$TMPTEST/keyrings"
+    mkdir -p "$SOURCES_DIR" "$KEYRING_DIR"
+    apt_add_repo example https://example.invalid/key.asc \
+        'deb [signed-by=@KEYRING@] https://example.invalid/apt stable main' > /dev/null 2>&1
+    [ ! -e "$KEYRING_DIR/example.gpg" ]
+    [ ! -e "$SOURCES_DIR/example.list" ]
+}
