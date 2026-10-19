@@ -1848,7 +1848,12 @@ Create `lib/module.sh`:
 
 MODULE_ORDER=()
 MODULE_DIR=""
-declare -A _MOD_STATE=()
+# The -g is load-bearing. `declare -A` runs wherever this file is sourced;
+# from inside a function frame it becomes frame-local and reverts to unset
+# when that frame returns. A hyphenated subscript on an unset array is then
+# parsed as arithmetic (00 - core) and aborts under `set -u` with
+# "core: unbound variable" — and every module name here is hyphenated.
+declare -gA _MOD_STATE=()
 
 # manifest_read FILE — one entry per line. Strips blank lines, whole-line
 # comments, and surrounding whitespace. Trailing comments are NOT stripped:
@@ -2296,6 +2301,10 @@ sudo_validate() {
 }
 
 select_modules() {
+    # Note on the "${arr[@]:-}" pattern below: on a genuinely empty array the
+    # :- default INJECTS one empty-string element rather than expanding to
+    # nothing. That is why each loop carries a `[[ -z $m ]] && continue`
+    # guard — those guards are load-bearing, not defensive clutter.
     local -a candidates=()
 
     if (( ${#ONLY_MODULES[@]} )); then
@@ -2383,7 +2392,7 @@ main() {
     localenv_load
     select_modules || return 1
     collect_prompts
-    sudo_validate
+    sudo_validate || return 1
 
     local name
     for name in "${MODULE_ORDER[@]}"; do
@@ -2406,6 +2415,12 @@ bats tests/bootstrap.bats
 ```
 
 Expected: 13 tests, 13 passing.
+
+Three further tests were added during review, because the 13 above reach only
+`parse_args` and `preflight`, leaving three load-bearing invariants uncovered:
+`00-core` surviving `--skip` while a different module is still dropped;
+`sudo_validate` invoking no `sudo` under `DRY_RUN=1`; and the prompt-phase line
+preceding the first install line in real `--dry-run --yes` output. Final: 16.
 
 - [ ] **Step 5: Create a fixture module and prove the whole engine drives it**
 
@@ -4389,6 +4404,10 @@ The work is done when all of these hold:
 
 Per spec §8, these can only be verified on the real machine after the wipe, against the README checklist:
 
+- **Stage 1 of `bootstrap.sh`** — the curl-pipe clone, `git` install, and
+  re-exec. No test exercises it: a real run clones over the network, and
+  Task 22's container test copies the repo in rather than cloning. Verified
+  by reading only; the project's largest untested surface.
 - GNOME settings actually applying
 - The NAS mount succeeding against a real NAS
 - Bluetooth devices reconnecting after a reboot
