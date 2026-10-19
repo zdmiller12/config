@@ -1,0 +1,4 @@
+name=50-media
+summary=Media and document tooling
+default=on
+container=no

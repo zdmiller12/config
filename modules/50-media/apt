@@ -1,0 +1,14 @@
+# Video. tools/videos/ shells out to ffmpeg and mkvmerge by name —
+# installing VLC does not substitute for either.
+ffmpeg
+mkvtoolnix
+mkvtoolnix-gui
+
+# Graphics and documents
+inkscape
+pandoc
+texlive
+
+# Image metadata and conversion
+exif
+webp
