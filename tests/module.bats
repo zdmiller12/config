@@ -197,6 +197,16 @@ gh" ]
     printf '%s\n' "${SUMMARY_ROWS[@]}" | grep -q '^failed|40-desktop'
 }
 
+@test "module_run records failure when a line follows a stray exit in setup.sh" {
+    mkmod 40-desktop
+    printf 'exit 3\necho "this line still runs"\n' > "$MODULES_DIR/40-desktop/setup.sh"
+    status=0
+    module_run 40-desktop > /dev/null 2>&1 || status=$?
+    [ "$status" -eq 0 ]
+    printf '%s\n' "${SUMMARY_ROWS[@]}" | grep -q '^failed|40-desktop'
+    ! printf '%s\n' "${SUMMARY_ROWS[@]}" | grep -q '^ok|40-desktop'
+}
+
 @test "module_run records success in the summary" {
     mkmod 00-core
     printf 'git\n' > "$MODULES_DIR/00-core/apt"

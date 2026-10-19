@@ -131,21 +131,33 @@ module_run() {
         # shellcheck disable=SC2034 # consumed by setup.sh, not this file
         MODULE_DIR=$dir
         local rc=0
-        # setup.sh may be a standalone-style script that calls `exit` to
-        # signal failure. Sourced directly, `exit` would kill this whole
-        # process; shadow it as a function so it behaves like `return`
-        # instead, stopping just the sourced script. This keeps everything
-        # in the current shell (so summary_add calls inside setup.sh still
-        # land in SUMMARY_ROWS) while still containing the failure to this
-        # module.
+        # A module's setup.sh is sourced, not executed, so it should signal
+        # failure with `return`, not `exit`. The shadow below is a safety
+        # net for a stray `exit` call, not the intended path: sourcing a
+        # file that calls `exit` would otherwise kill this whole process.
+        # Shadowing it as a function makes it behave like `return` instead,
+        # stopping just the sourced script. This keeps everything in the
+        # current shell (so summary_add calls inside setup.sh still land in
+        # SUMMARY_ROWS) while still containing the failure to this module.
+        #
+        # Caveat: `return` does not abort the rest of the sourced file the
+        # way `exit` would have — any lines after the `exit` call still run.
+        # There is no reliable way to stop a sourced script from a function,
+        # and this only matters on a path where the module author already
+        # made a mistake. We still need the exit CODE though: `source`
+        # reports the status of the last command in the file, which may not
+        # be the `exit` call if later lines ran. Capture it in a sentinel so
+        # a later successful command can't mask the original failure.
+        local _setup_exit=""
         # shellcheck disable=SC2329 # invoked indirectly, if at all, by setup.sh
-        exit() { return "${1:-0}"; }
+        exit() { _setup_exit=${1:-0}; return "${1:-0}"; }
         set +e
         # shellcheck disable=SC1090,SC1091
         source "$dir/setup.sh"
         rc=$?
         set -e
         unset -f exit
+        [[ -n $_setup_exit ]] && rc=$_setup_exit
         if (( rc )); then
             summary_add failed "$name" "setup.sh exited $rc"
             return 0
