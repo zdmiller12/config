@@ -1,121 +1,89 @@
 # Personal Configurations
 
-> Personal configs and tools...
-
-## Setting Up a New Machine
-
-1. Install [fish-shell](https://github.com/fish-shell/fish-shell)
-2. Install [fisher](https://github.com/jorgebucaran/fisher)
-3. Install [nvm.fish](https://github.com/jorgebucaran/nvm.fish)
-4. Install [rbenv](https://github.com/rbenv/rbenv) & [ruby-build](https://github.com/rbenv/ruby-build) (*if needed*)
-5. Install [pyenv](https://github.com/pyenv/pyenv)
-
-
-### fish-shell configuration
-
-Copy contents of [config.fish](./config.fish) to `$HOME/.config/fish/config.fish`.
-
-> using fish shell...
-
-```fish
-printf "%s\n" ( cat config.fish ) > $HOME/.config/fish/config.fish
-```
-
-## git configuration
-
-Copy contents of [.gitconfig](./.gitconfig) to `$HOME/.gitconfig`.
-
-> using fish shell...
-
-```fish
-printf "%s\n" ( cat .gitconfig ) > $HOME/.gitconfig
-```
-
-## Tools
-
-- [Printing](./printing/README.md)
-- [Videos](./videos/README.md)
-
----
-
-## OpenUSD
-
-> [OpenUSD](https://github.com/PixarAnimationStudios/OpenUSD)
-
-[usd-core](https://pypi.org/project/usd-core/) can be installed with pip, but installation of other OpenUSD tools, like [usdview](https://openusd.org/release/toolset.html#usdview), was achieved with the following steps...
+One command takes a freshly installed Ubuntu machine to a usable, personalized
+state: packages installed, shell configured, dotfiles linked, toolchains ready.
 
 ```sh
-sudo apt-get install --install-suggests \
-    build-essential \
-    cmake \
-    freeglut3-dev \
-    libao-dev \
-    libglew-dev \
-    libglfw3-dev \
-    libglm-dev \
-    libglu1-mesa-dev \
-    libmpg123-dev \
-    libxt-dev \
-    mesa-common-dev \
-    mesa-utils \
-    pkg-config \
-    python3-opengl
+curl -fsSL https://raw.githubusercontent.com/zdmiller12/config/main/bootstrap.sh | bash
 ```
 
-This installation compiles with python3.12, and the `install_dir` used with the [build_usd.py](https://github.com/PixarAnimationStudios/OpenUSD/blob/f03754834e28356781de5df73d12b48548ed475f/build_scripts/build_usd.py) script is specific to this python version. That said, `install_dir` was chosen such that installs for different python versions share the parent directory `usd`.
+Re-running is safe: it converges rather than duplicating. The first run prompts
+for a module selection and your identity; later runs replay the saved choices.
 
-**Proposed organization of OpenUSD intsalls:**
+## Options
 
-```
-$HOME
-└── usd
-    ├── python3.8
-    ├── python3.12
-    └── ...
-```
+| Flag | Effect |
+|---|---|
+| `--dry-run` | Print every command without executing it |
+| `--yes`, `-y` | Accept defaults, never prompt |
+| `--reconfigure` | Re-prompt the module checklist |
+| `--only MODULE` | Run just this module (repeatable) |
+| `--skip MODULE` | Skip this module (repeatable) |
 
-If desired python version is not already installed with pyenv, do that.
+## Modules
 
+| Module | Default | What it does |
+|---|---|---|
+| `00-core` | on | Build toolchain and the headers needed to compile Pythons |
+| `10-shell` | on | fish, fisher, dotfile links, git identity, SSH key generation |
+| `20-toolchains` | on | asdf, pyenv, uv, rustup and their fish init blocks |
+| `30-dev` | on | VSCode and its extensions, Docker CE |
+| `40-desktop` | on | Browser, torrent client, KDE Connect, fonts, GNOME settings |
+| `50-media` | on | ffmpeg, mkvtoolnix, VLC, inkscape, pandoc, texlive, image tools |
+| `60-nas` | off | sshfs and a systemd mount unit for the NAS |
+| `90-bluetooth-autoreconnect` | off | bluez auto-enable and userspace HID |
+| `90-dualboot` | off | GRUB hidden menu, Windows in the GRUB menu, `winboot` |
 
-```sh
-git clone https://github.com/PixarAnimationStudios/OpenUSD.git
-cd OpenUSD
-pyenv virtualenv 3.12 usd
-pyenv local usd
-exec fish
-pip install --upgrade numpy pip PyOpenGL PyOpenGL_accelerate pyside6 setuptools
-python build_scripts/build_usd.py $HOME/usd/python3.12
-```
+`00-core` cannot be deselected. `10-shell` is required by `20-toolchains`. The
+`90-` prefix marks modules that change system state outside the package
+manager; they are off by default.
 
-The installation ends with the following message...
+## Forking it
 
-```sh
-Success! To use USD, please ensure that you have:
+Nothing personal is committed. Identity and machine-specific values are
+prompted on the first run and written to `~/.config/config-bootstrap/local.env`,
+which is gitignored.
 
-    The following in your PYTHONPATH environment variable:
-    /home/miller/usd/python3.12/lib/python
+1. Fork the repo.
+2. Edit the manifests — `modules/*/apt`, `modules/*/snap` — to taste. They are
+   newline-delimited package lists; `#` starts a whole-line comment.
+3. Swap the URL in the curl command for your fork's.
 
-    The following in your PATH environment variable:
-    /home/miller/usd/python3.12/bin
-```
+You should not need to edit the engine in `lib/` to change what gets
+installed. A module with only manifests needs no code at all.
 
-... but to avoid universally tweaking the `PATH` and `PYTHONPATH` variables, I made the following [function](https://fishshell.com/docs/current/cmds/function.html) for the fish shell.
+## Recovering a dual-boot machine
 
-> Saved as $HOME/.config/fish/functions/usd.fish
+`90-dualboot` hides the GRUB menu, so the machine boots straight to Ubuntu.
+**Hold `Esc` (UEFI) or `Shift` (BIOS) during power-on to show the menu.** That
+menu includes Windows, because the module enables `os-prober`. From a running
+Ubuntu, `winboot` reboots into Windows once.
 
-```shell
-function usd --description "Wrapper for OpenUSD installation"
-    begin
-        set -l USD_PATH $HOME/usd/python3.12/
-        set -l BIN_PATH $USD_PATH/bin/
+## Deliberately not included
 
-        fish_add_path -aP $BIN_PATH
-        set -lx PYTHONPATH $USD_PATH/lib/python/
+- **Self-hosted services** — apache2, postfix, redis-server, jackett, and
+  teamviewerd are not reproduced.
+- **Virtualization** — qemu/libvirt/virt-manager. See
+  [docs/virtualization.md](./docs/virtualization.md).
+- **Flatpak** — no module ships flatpaks, and the engine has no flatpak support.
+- **MegaSync and ProtonVPN** — both are manual post-install steps.
+- **The eleven existing pyenv virtualenvs** — recreate them as needed.
 
-        env -C $BIN_PATH $argv
-    end
-end
+## Before wiping a machine
 
-```
+Captured state that the wipe would destroy:
 
-The function could definitely be improved to accept python version as an argument, if needed.
+- [ ] Commit the live `~/.config/fish/config.fish`, `~/.gitconfig`, and
+      `~/.ssh/config` if they have drifted from the copies in `dotfiles/`.
+- [ ] Refresh the manifests: `apt-mark showmanual`, `snap list`,
+      `code --list-extensions`, `asdf plugin list`, and a `dconf dump` of the
+      terminal profile.
+- [ ] **Confirm every cloud-sync folder has finished syncing.** Nothing under
+      `~/MEGA` is recreated by any module.
+
+## Other docs
+
+- [tools/](./tools/README.md) — standalone scripts, not part of bootstrap
+- [docs/openusd.md](./docs/openusd.md) — OpenUSD manual build notes
+- [docs/virtualization.md](./docs/virtualization.md) — if you want VMs back
+- [design spec](./docs/superpowers/specs/2026-10-14-machine-bootstrap-design.md)
