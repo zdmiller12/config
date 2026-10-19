@@ -1,0 +1,4 @@
+name=40-desktop
+summary=Browser, desktop apps, fonts, GNOME settings
+default=on
+container=no
