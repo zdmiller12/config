@@ -150,6 +150,11 @@ select_modules() {
         fi
     fi
 
+    # Note: "${arr[@]:-}" on an EMPTY array still yields one element (an
+    # empty string), it does not vanish — that is why every loop below
+    # guards with `[[ -z $m ]] && continue`. Deleting that guard as
+    # "redundant" would let a phantom empty entry slip through and, on an
+    # empty $candidates, defeat the has_core check below.
     # 00-core is a hard prerequisite and cannot be deselected.
     local has_core=0 m
     for m in "${candidates[@]:-}"; do
@@ -212,7 +217,7 @@ main() {
     localenv_load
     select_modules || return 1
     collect_prompts
-    sudo_validate
+    sudo_validate || return 1
 
     local name
     for name in "${MODULE_ORDER[@]}"; do
