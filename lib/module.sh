@@ -7,7 +7,14 @@
 
 MODULE_ORDER=()
 MODULE_DIR=""
-declare -A _MOD_STATE=()
+# -g is load-bearing: if this file is sourced from inside a function
+# frame (directly or indirectly), a plain `declare -A` scopes the array
+# to that frame and it reverts to unset once the frame returns. Every
+# module name in this project is hyphenated (e.g. 00-core), and a
+# hyphenated key on an unset/non-associative array is parsed as an
+# arithmetic expression (00 - core), which aborts under `set -u` with
+# "core: unbound variable". Do not drop the -g.
+declare -gA _MOD_STATE=()
 
 # manifest_read FILE — one entry per line. Strips blank lines, whole-line
 # comments, and surrounding whitespace. Trailing comments are NOT stripped:

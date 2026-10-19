@@ -13,14 +13,6 @@ setup() {
     # (the checklist fallback); loaded here so tests can call it directly.
     load_lib module
     load_lib ui
-    # Sourcing module.sh from inside this function (even indirectly, via
-    # load_lib) scopes its `declare -A _MOD_STATE=()` locally to that
-    # function frame; it reverts to a plain unset array once load_lib
-    # returns. bootstrap.sh runs under `set -u`, so a later hyphenated
-    # module name misparsed as an arithmetic subscript aborts with
-    # "unbound variable". Re-declaring it global here keeps it associative
-    # for the rest of the test.
-    declare -g -A _MOD_STATE=()
     RUN_STAMP="test"
     # shellcheck disable=SC1090
     source "$REPO_ROOT/bootstrap.sh"
