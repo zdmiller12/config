@@ -1,3 +1,4 @@
 name=00-core
 summary=Core build tooling and Python build headers
 default=on
+container=yes

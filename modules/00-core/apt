@@ -1,2 +1,19 @@
-git
+# Core tooling
+build-essential
+cmake
 curl
+git
+gh
+pkg-config
+htop
+
+# Headers required to build complete Pythons with pyenv. A missing header
+# does not fail the build — it silently drops a stdlib module.
+libssl-dev
+libreadline-dev
+libsqlite3-dev
+libbz2-dev
+liblzma-dev
+libffi-dev
+tk-dev
+libncurses-dev
