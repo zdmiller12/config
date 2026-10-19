@@ -1,0 +1,7 @@
+# Dotfile symlinks: <path relative to dotfiles/>   <destination>
+# Anything pre-existing and not already a symlink is backed up first.
+
+fish/config.fish              ~/.config/fish/config.fish
+fish/functions/usd.fish       ~/.config/fish/functions/usd.fish
+fish/functions/winboot.fish   ~/.config/fish/functions/winboot.fish
+git/gitconfig                 ~/.gitconfig

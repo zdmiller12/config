@@ -99,3 +99,16 @@ EOF
     [ -L "$TMPTEST/dest/one.conf" ]
     [ -L "$TMPTEST/dest/two.conf" ]
 }
+
+@test "the real dotfiles manifest references files that exist" {
+    manifest="$REPO_ROOT/dotfiles/links"
+    [ -f "$manifest" ]
+    while read -r rel dest _; do
+        [[ -z $rel || $rel == \#* ]] && continue
+        [ -e "$REPO_ROOT/dotfiles/$rel" ] || {
+            echo "manifest references a missing file: $rel"
+            return 1
+        }
+        [ -n "$dest" ]
+    done < "$manifest"
+}

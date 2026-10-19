@@ -1,0 +1,8 @@
+# Rendered to ~/.ssh/config.d/bootstrap by the 60-nas module.
+# Contains hostnames and key paths only — never a secret.
+
+Host nas
+    HostName @NAS_HOST@
+    User @NAS_USER@
+    IdentityFile @NAS_KEY@
+    IdentitiesOnly yes
