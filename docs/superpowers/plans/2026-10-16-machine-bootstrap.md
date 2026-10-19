@@ -1649,7 +1649,9 @@ mkmod() {
         printf 'name=%s\n' "$name"
         printf 'summary=The %s module\n' "$name"
         printf 'default=on\n'
-        [[ -n $requires ]] && printf 'requires=%s\n' "$requires"
+        # An `&&` guard here would make the block return 1 when $requires is
+        # empty, aborting any bare `mkmod NAME` under bats' errexit.
+        if [[ -n $requires ]]; then printf 'requires=%s\n' "$requires"; fi
     } > "$MODULES_DIR/$name/meta"
 }
 
@@ -1924,7 +1926,7 @@ localenv_set() {
         _log DRY '0;36' "set $key in $LOCAL_ENV"
         return 0
     fi
-    [[ -d $dir ]] || mkdir -p "$dir"
+    [[ -d $dir ]] || run mkdir -p "$dir"
     if [[ -f $LOCAL_ENV ]]; then
         content=$(grep -v "^${key}=" "$LOCAL_ENV" || true)
     fi
@@ -1932,13 +1934,17 @@ localenv_set() {
         [[ -n $content ]] && printf '%s\n' "$content"
         printf '%s="%s"\n' "$key" "$value"
     } > "$LOCAL_ENV.tmp"
-    mv "$LOCAL_ENV.tmp" "$LOCAL_ENV"
-    chmod 600 "$LOCAL_ENV"
+    run mv "$LOCAL_ENV.tmp" "$LOCAL_ENV"
+    run chmod 600 "$LOCAL_ENV"
 }
 
 # module_run NAME
 module_run() {
-    local name=$1 dir="$MODULES_DIR/$name"
+    # Two statements, not one. Bash expands every word of a command before
+    # any assignment in it takes effect, so `dir="$MODULES_DIR/$name"` in the
+    # same `local` would read a stale outer $name rather than $1.
+    local name=$1
+    local dir="$MODULES_DIR/$name"
     log_step "Module: $name"
 
     local apt_before=${#APT_FAILED[@]}
@@ -1968,11 +1974,25 @@ module_run() {
     if [[ -f $dir/setup.sh ]]; then
         MODULE_DIR=$dir
         local rc=0
+        # A module's setup.sh should signal failure with `return`, since it is
+        # sourced rather than executed. But `exit` in a sourced file kills this
+        # whole process, and `set +e` does not change that — so a stray `exit`
+        # in a forker's module would abort a 40-minute destructive run. Shadow
+        # it for the duration of the source as a safety net.
+        #
+        # The sentinel is required: `return` does not stop the rest of a sourced
+        # script, and `source` reports the LAST command's status. Without it, an
+        # `exit 3` followed by any further line yields rc=0 and the failed module
+        # is recorded as successful.
+        local _setup_exit=""
+        exit() { _setup_exit=${1:-0}; return "${1:-0}"; }
         set +e
         # shellcheck disable=SC1090
         source "$dir/setup.sh"
         rc=$?
         set -e
+        unset -f exit
+        [[ -n $_setup_exit ]] && rc=$_setup_exit
         if (( rc )); then
             summary_add failed "$name" "setup.sh exited $rc"
             return 0
