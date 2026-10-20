@@ -14,14 +14,13 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y shellcheck
       - name: Shellcheck the engine and all module setup scripts
         run: |
-          for f in bootstrap.sh; do
-            [ -e "$f" ] || continue
-            shellcheck "$f"
-          done
-          for f in lib/*.sh; do
-            [ -e "$f" ] || continue
-            shellcheck "$f"
-          done
+          # bootstrap.sh and lib/*.sh are designed to be sourced together as
+          # one unit, so they must be analysed as the set they actually are.
+          # Linting bootstrap.sh alone makes shellcheck blind to the seven
+          # libraries it sources (SC1091) and to the lib/ consumers of
+          # ASSUME_YES and MODULE_DIR (SC2034) — both false positives that
+          # only appear when the file is checked in isolation.
+          shellcheck -x bootstrap.sh lib/*.sh
           # Modules are sourced with the engine's helpers already defined,
           # so tell shellcheck not to flag those as undefined.
           for f in modules/*/setup.sh; do
