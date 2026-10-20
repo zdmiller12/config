@@ -1,0 +1,5 @@
+name=20-toolchains
+summary=asdf, pyenv, uv, and rustup
+default=on
+requires=10-shell
+container=yes
