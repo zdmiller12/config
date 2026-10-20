@@ -5,6 +5,17 @@
 
 load helper
 
+# module_count — the number of real modules, counted independently of
+# module_list: a direct `find` on meta files, not module_list's own
+# "$MODULES_DIR"/*/ glob-and-filter. The loop-based tests below assert
+# they visited exactly this many modules, so a module_list regression
+# that silently returns too few (or zero) modules — total glob failure,
+# or a partial one that drops a module or two — cannot pass by having
+# iterated over less than the real set.
+module_count() {
+    find "$MODULES_DIR" -mindepth 2 -maxdepth 2 -name meta -type f | wc -l
+}
+
 setup() {
     load_lib log
     load_lib patch
@@ -17,32 +28,49 @@ setup() {
 }
 
 @test "every module declares name, summary, default, and container" {
-    local missing=""
+    local missing="" count=0 expected
+    expected=$(module_count)
     while IFS= read -r m; do
+        (( ++count ))
         for key in name summary default container; do
             [[ -n "$(module_meta_get "$MODULES_DIR/$m" "$key")" ]] \
                 || missing="$missing $m:$key"
         done
     done < <(module_list)
+    [ "$count" -eq "$expected" ] \
+        || { echo "iterated $count modules, expected $expected"; return 1; }
     [ -z "$missing" ] || { echo "missing keys:$missing"; return 1; }
 }
 
 @test "every module's default is exactly on or off" {
+    local count=0 expected
+    expected=$(module_count)
     while IFS= read -r m; do
+        (( ++count ))
         d=$(module_meta_get "$MODULES_DIR/$m" default)
         [[ $d == on || $d == off ]] || { echo "$m has default=$d"; return 1; }
     done < <(module_list)
+    [ "$count" -eq "$expected" ] \
+        || { echo "iterated $count modules, expected $expected"; return 1; }
 }
 
 @test "every module's name matches its directory" {
+    local count=0 expected
+    expected=$(module_count)
     while IFS= read -r m; do
+        (( ++count ))
         n=$(module_meta_get "$MODULES_DIR/$m" name)
         [ "$n" = "$m" ] || { echo "$m declares name=$n"; return 1; }
     done < <(module_list)
+    [ "$count" -eq "$expected" ] \
+        || { echo "iterated $count modules, expected $expected"; return 1; }
 }
 
 @test "every 90-prefixed module defaults to off" {
+    local count=0 expected
+    expected=$(module_count)
     while IFS= read -r m; do
+        (( ++count ))
         case $m in
             90-*)
                 d=$(module_meta_get "$MODULES_DIR/$m" default)
@@ -50,6 +78,8 @@ setup() {
                 ;;
         esac
     done < <(module_list)
+    [ "$count" -eq "$expected" ] \
+        || { echo "iterated $count modules, expected $expected"; return 1; }
 }
 
 @test "60-nas defaults to off" {
@@ -57,19 +87,29 @@ setup() {
 }
 
 @test "every requires names a module that exists" {
+    local count=0 expected
+    expected=$(module_count)
     while IFS= read -r m; do
+        (( ++count ))
         for dep in $(module_meta_get "$MODULES_DIR/$m" requires); do
             [ -f "$MODULES_DIR/$dep/meta" ] \
                 || { echo "$m requires missing module $dep"; return 1; }
         done
     done < <(module_list)
+    [ "$count" -eq "$expected" ] \
+        || { echo "iterated $count modules, expected $expected"; return 1; }
 }
 
 @test "the full default selection resolves without a cycle" {
     local -a defaults=()
+    local count=0 expected
+    expected=$(module_count)
     while IFS= read -r m; do
+        (( ++count ))
         [[ "$(module_meta_get "$MODULES_DIR/$m" default)" == on ]] && defaults+=("$m")
     done < <(module_list)
+    [ "$count" -eq "$expected" ] \
+        || { echo "iterated $count modules, expected $expected"; return 1; }
     module_resolve_order "${defaults[@]}"
     [ "${#MODULE_ORDER[@]}" -ge 1 ]
 }
@@ -84,7 +124,10 @@ setup() {
 # deliberately wide enough to admit all of those; if it ever rejects a
 # legitimate name, widen the class rather than deleting this test.
 @test "every manifest line looks like a package name" {
+    local count=0 expected
+    expected=$(module_count)
     while IFS= read -r m; do
+        (( ++count ))
         for file in apt snap; do
             [[ -f $MODULES_DIR/$m/$file ]] || continue
             while IFS= read -r entry; do
@@ -93,16 +136,23 @@ setup() {
             done < <(manifest_read "$MODULES_DIR/$m/$file")
         done
     done < <(module_list)
+    [ "$count" -eq "$expected" ] \
+        || { echo "iterated $count modules, expected $expected"; return 1; }
 }
 
 @test "every repos line has exactly three pipe-separated fields" {
+    local count=0 expected
+    expected=$(module_count)
     while IFS= read -r m; do
+        (( ++count ))
         [[ -f $MODULES_DIR/$m/repos ]] || continue
         while IFS= read -r entry; do
             n=$(awk -F'|' '{print NF}' <<< "$entry")
             [ "$n" -eq 3 ] || { echo "$m/repos line has $n fields: $entry"; return 1; }
         done < <(manifest_read "$MODULES_DIR/$m/repos")
     done < <(module_list)
+    [ "$count" -eq "$expected" ] \
+        || { echo "iterated $count modules, expected $expected"; return 1; }
 }
 
 # @KEYRING@ and @CODENAME@ are runtime placeholders substituted by
@@ -114,28 +164,49 @@ setup() {
 }
 
 @test "every setup.sh is valid bash" {
+    local count=0 expected
+    expected=$(module_count)
     while IFS= read -r m; do
+        (( ++count ))
         [[ -f $MODULES_DIR/$m/setup.sh ]] || continue
         bash -n "$MODULES_DIR/$m/setup.sh" \
             || { echo "$m/setup.sh has a syntax error"; return 1; }
     done < <(module_list)
+    [ "$count" -eq "$expected" ] \
+        || { echo "iterated $count modules, expected $expected"; return 1; }
 }
 
 @test "every prompts.sh is valid bash" {
+    local count=0 expected
+    expected=$(module_count)
     while IFS= read -r m; do
+        (( ++count ))
         [[ -f $MODULES_DIR/$m/prompts.sh ]] || continue
         bash -n "$MODULES_DIR/$m/prompts.sh" \
             || { echo "$m/prompts.sh has a syntax error"; return 1; }
     done < <(module_list)
+    [ "$count" -eq "$expected" ] \
+        || { echo "iterated $count modules, expected $expected"; return 1; }
 }
 
+# The flagship test spec §8 calls out: a dry run of every module, without a
+# machine. It is also the one the review specifically flagged — a loop
+# over module_list with no check that the loop ever ran would report a
+# clean pass having exercised nothing, if module_list's glob ever broke.
+# The count assertion below closes that: it fails if module_list returns
+# fewer modules than actually exist on disk, not just if it returns none.
 @test "a dry run of every module exits zero" {
+    local count=0 expected
+    expected=$(module_count)
     while IFS= read -r m; do
+        (( ++count ))
         run_status=0
         ( cd "$REPO_ROOT" && ./bootstrap.sh --dry-run --yes --only "$m" ) > /dev/null 2>&1 \
             || run_status=$?
         [ "$run_status" -eq 0 ] || { echo "dry run failed for $m (exit $run_status)"; return 1; }
     done < <(module_list)
+    [ "$count" -eq "$expected" ] \
+        || { echo "iterated $count modules, expected $expected"; return 1; }
 }
 
 # This is the test spec §8 calls out explicitly: a dry run must be provably
