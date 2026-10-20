@@ -1,0 +1,4 @@
+name=60-nas
+summary=sshfs mount for the NAS
+default=off
+container=no
