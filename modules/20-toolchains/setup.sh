@@ -7,7 +7,7 @@ MODULE_FAILED=0
 # asdf ships as a single Go binary from its GitHub releases. Check for a
 # newer tag before a fresh install:
 #   https://github.com/asdf-vm/asdf/releases
-ASDF_VERSION="${ASDF_VERSION:-v0.18.0}"
+ASDF_VERSION="${ASDF_VERSION:-v0.20.2}"
 ASDF_BIN="$HOME/.local/bin/asdf"
 
 if [[ ! -x $ASDF_BIN ]]; then
