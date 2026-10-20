@@ -3204,6 +3204,27 @@ return 0
 
 Note `nvm.fish` is deliberately *not* installed: spec §2 drops the duplicate Node managers in favor of asdf.
 
+**Four corrections were made during review; `modules/10-shell/setup.sh` as shipped is
+the authority, not the block above.** All four were defects in this plan's text, each
+found by auditing failure paths no dry run on the authoring machine could reach:
+
+1. The remote switch now also requires `$SSH_KEY.pub` to exist. Gated only on the HTTPS
+   prefix, it would flip `origin` to SSH after a failed `ssh-keygen` — authenticating
+   before any key is authorized, which is what spec §6's ordering exists to prevent.
+2. Failures are tracked in a `MODULE_FAILED` flag and surfaced. Previously both
+   `summary_note` calls asserted success unconditionally and `return 0` was hardcoded,
+   so a real keygen failure yielded an `ok` module *plus* a note claiming a key had been
+   generated — inverting spec §7. `ssh-keygen` failure now fails the module; `chsh` and
+   fisher failures are logged accurately but do not, since both are conveniences and
+   `chsh` fails benignly when fish is not yet in `/etc/shells`.
+3. `$USER` and `$(hostname)` both carry fallbacks:
+   `${GIT_EMAIL:-${USER:-$(id -un)}@$(hostname 2>/dev/null || echo localhost)}`.
+   Unguarded, an unset `$USER` under `set -u` aborts the sourced script — and this module
+   declares `container=yes`, where that is common.
+4. The identity write requires **both** `GIT_NAME` and `GIT_EMAIL` (was `||`), with the
+   partial case noted. Note the claimed consequence did not reproduce: `git commit`
+   against a config with an empty `user.email` succeeded rather than erroring.
+
 - [ ] **Step 4: Verify the dry run**
 
 Run: `./bootstrap.sh --dry-run --yes --only 10-shell`
