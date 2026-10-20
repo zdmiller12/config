@@ -146,7 +146,18 @@ select_modules() {
                 [[ $name == 90-* ]] && label="$summary (changes system state)"
                 UI_ITEMS+=("$name|$label|$default")
             done < <(module_list)
-            mapfile -t candidates < <(ui_checklist "Select modules to run")
+            # Capture the checklist's exit status separately from its output:
+            # a process-substitution pipeline (the previous `mapfile < <(...)`
+            # form) discards the command's exit status, so pressing Cancel in
+            # whiptail was indistinguishable from selecting nothing and the
+            # run proceeded with 00-core alone.
+            local checklist_out checklist_rc=0
+            checklist_out=$(ui_checklist "Select modules to run") || checklist_rc=$?
+            if (( checklist_rc )); then
+                log_error "Module selection cancelled; aborting."
+                return 1
+            fi
+            mapfile -t candidates <<< "$checklist_out"
         fi
     fi
 
@@ -175,7 +186,13 @@ select_modules() {
     done
 
     module_resolve_order "${kept[@]}" || return 1
-    localenv_set MODULE_SELECTION "${MODULE_ORDER[*]}"
+    # A targeted run (--only/--skip) is a one-off, not a new preference: only
+    # persist the selection when the caller did not narrow it, otherwise a
+    # single `--only 60-nas` run would permanently replace the saved
+    # selection and every later plain run would replay just that module.
+    if (( ${#ONLY_MODULES[@]} == 0 && ${#SKIP_MODULES[@]} == 0 )); then
+        localenv_set MODULE_SELECTION "${MODULE_ORDER[*]}"
+    fi
     log_info "Modules: ${MODULE_ORDER[*]}"
     return 0
 }

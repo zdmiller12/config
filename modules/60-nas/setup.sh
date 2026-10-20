@@ -18,26 +18,34 @@ else
         MODULE_FAILED=1
     }
 fi
-run_sudo chown "$USER:$USER" "$NAS_MOUNT" || {
+run_sudo chown "${USER:-$(id -un)}:${USER:-$(id -un)}" "$NAS_MOUNT" || {
     log_error "failed to chown mountpoint: $NAS_MOUNT"
     MODULE_FAILED=1
 }
 
 # 2. Render the ssh host entry. No secrets — just a hostname and a key path.
-if [[ -f $DOTFILES_DIR/ssh/config.template ]]; then
+# $DOTFILES_DIR is always set by bootstrap.sh, but a module sourced manually
+# outside the engine would otherwise abort here under `set -u`.
+if [[ -f ${DOTFILES_DIR:-}/ssh/config.template ]]; then
     rendered=$(sed \
         -e "s#@NAS_HOST@#$NAS_HOST#" \
-        -e "s#@NAS_USER@#${NAS_USER:-$USER}#" \
+        -e "s#@NAS_USER@#${NAS_USER:-${USER:-$(id -un)}}#" \
         -e "s#@NAS_KEY@#${NAS_KEY:-$HOME/.ssh/id_ed25519}#" \
-        "$DOTFILES_DIR/ssh/config.template")
+        "${DOTFILES_DIR:-}/ssh/config.template")
     run mkdir -p "$HOME/.ssh/config.d" || {
         log_error "failed to create $HOME/.ssh/config.d"
         MODULE_FAILED=1
     }
     patch_write_if_different "$HOME/.ssh/config.d/bootstrap" "$rendered"
-    # ~/.ssh/config must include config.d for the entry to take effect.
-    if [[ -f $HOME/.ssh/config ]] && ! grep -q 'Include config.d/\*' "$HOME/.ssh/config"; then
-        summary_note "Add 'Include config.d/*' to the top of ~/.ssh/config."
+    # ~/.ssh/config must include config.d for the entry to take effect. On a
+    # fresh install that file does not exist at all, which previously
+    # suppressed this note entirely — exactly the scenario this project
+    # exists to serve. Fire whenever the Include line is missing, including
+    # when ~/.ssh/config itself is absent. Never create or rewrite the
+    # user's ~/.ssh/config here: this module cannot know what else belongs
+    # in it, so a note is the right remedy.
+    if [[ ! -f $HOME/.ssh/config ]] || ! grep -q 'Include config.d/\*' "$HOME/.ssh/config"; then
+        summary_note "Add 'Include config.d/*' to the top of ~/.ssh/config (creating the file if it does not exist) so ssh nas resolves."
     fi
 else
     log_warn "No dotfiles/ssh/config.template found; skipping ssh config fragment."
@@ -53,7 +61,7 @@ else
     log_info "Probing $NAS_HOST over ssh"
     if ssh -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new \
         -i "${NAS_KEY:-$HOME/.ssh/id_ed25519}" \
-        "${NAS_USER:-$USER}@$NAS_HOST" true 2>/dev/null; then
+        "${NAS_USER:-${USER:-$(id -un)}}@$NAS_HOST" true 2>/dev/null; then
         probe_ok=1
         log_ok "NAS reachable"
     else
@@ -76,7 +84,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Mount]
-What=${NAS_USER:-$USER}@$NAS_HOST:$NAS_PATH
+What=${NAS_USER:-${USER:-$(id -un)}}@$NAS_HOST:$NAS_PATH
 Where=$NAS_MOUNT
 Type=fuse.sshfs
 Options=_netdev,allow_other,IdentityFile=${NAS_KEY:-$HOME/.ssh/id_ed25519},reconnect,ServerAliveInterval=15,ServerAliveCountMax=3,uid=$(id -u),gid=$(id -g)

@@ -28,7 +28,7 @@ sudo apt-get install --install-suggests \
 
 This installation compiles with python3.12, and the `install_dir` used with the [build_usd.py](https://github.com/PixarAnimationStudios/OpenUSD/blob/f03754834e28356781de5df73d12b48548ed475f/build_scripts/build_usd.py) script is specific to this python version. That said, `install_dir` was chosen such that installs for different python versions share the parent directory `usd`.
 
-**Proposed organization of OpenUSD intsalls:**
+**Proposed organization of OpenUSD installs:**
 
 ```
 $HOME

@@ -174,6 +174,14 @@ module_run() {
     local new_failures=$(( ${#APT_FAILED[@]} - apt_before + ${#PKG_FAILED[@]} - pkg_before ))
     if (( new_failures )); then
         summary_add failed "$name" "$new_failures package(s) failed"
+        # Spec §7: list every failure so it can be chased individually, not
+        # just a count. APT_FAILED/PKG_FAILED are cumulative across the
+        # whole run, so only the slice appended since this module started
+        # belongs to it.
+        local -a names=()
+        (( ${#APT_FAILED[@]} > apt_before )) && names+=("${APT_FAILED[@]:$apt_before}")
+        (( ${#PKG_FAILED[@]} > pkg_before )) && names+=("${PKG_FAILED[@]:$pkg_before}")
+        (( ${#names[@]} )) && summary_note "$name: failed package(s): ${names[*]}"
     else
         summary_add ok "$name"
     fi

@@ -25,7 +25,12 @@ if ! command -v efibootmgr > /dev/null 2>&1; then
     apt_install efibootmgr
 fi
 
-if ! command -v efibootmgr > /dev/null 2>&1; then
+# In a dry run, apt_install only logs the install (lib/apt.sh), so
+# efibootmgr will not actually exist yet on a machine that lacks it —
+# widen the check to also accept DRY_RUN, the same way
+# 20-toolchains/setup.sh does for asdf. Otherwise a stranger's first dry
+# run on a fresh machine sees this module fail for no reason.
+if ! command -v efibootmgr > /dev/null 2>&1 && ! (( DRY_RUN )); then
     log_error "efibootmgr is not available; cannot determine whether a Windows EFI entry exists"
     summary_note "90-dualboot could not run: efibootmgr is missing and could not be installed."
     return 1
@@ -108,8 +113,10 @@ fi
 
 # 7. winboot, installed only because a Windows EFI entry exists. The
 #    function itself is untouched — this module only links it into place.
-if [[ -f $DOTFILES_DIR/fish/functions/winboot.fish ]]; then
-    link_file "$DOTFILES_DIR/fish/functions/winboot.fish" \
+# $DOTFILES_DIR is always set by bootstrap.sh, but a module sourced manually
+# outside the engine would otherwise abort here under `set -u`.
+if [[ -f ${DOTFILES_DIR:-}/fish/functions/winboot.fish ]]; then
+    link_file "${DOTFILES_DIR:-}/fish/functions/winboot.fish" \
         "$HOME/.config/fish/functions/winboot.fish"
 else
     log_warn "dotfiles/fish/functions/winboot.fish not found; skipping winboot link."

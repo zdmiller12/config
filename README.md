@@ -81,6 +81,27 @@ Captured state that the wipe would destroy:
 - [ ] **Confirm every cloud-sync folder has finished syncing.** Nothing under
       `~/MEGA` is recreated by any module.
 
+## After reinstalling
+
+Manual verification on the real machine after the wipe — this is the
+compensating control for everything this project cannot test in CI: stage 1,
+both interactive paths, GNOME, the NAS, bluetooth, and GRUB.
+
+- [ ] **Before trusting `GRUB_TIMEOUT=0`:** confirm GRUB shows a Windows entry,
+      and that holding `Esc` (UEFI) or `Shift` (BIOS) at power-on reveals the
+      menu.
+- [ ] Run `winboot`, read its prompt, and confirm it resolves a plausible EFI
+      boot slot — then cancel, don't actually reboot into it.
+- [ ] `ssh nas` resolves, and the NAS `.mount` unit mounts.
+- [ ] Bluetooth devices reconnect on their own after a reboot.
+- [ ] GNOME dark theme and window-button layout are applied.
+- [ ] The module checklist renders correctly — whiptail if present, the
+      numbered fallback if it is absent.
+- [ ] Restore the terminal profile: `dconf load /org/gnome/terminal/ < <your dump>`,
+      using the dump captured in the pre-wipe checklist above.
+- [ ] Re-add any `~/.ssh/config` host entries by hand — this repo does not
+      commit or restore them.
+
 ## Other docs
 
 - [tools/](./tools/README.md) — standalone scripts, not part of bootstrap

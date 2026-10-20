@@ -59,10 +59,13 @@ fi
 #    only affects the current shell) — the same trap documented in
 #    docs/virtualization.md for libvirt.
 if getent group docker > /dev/null 2>&1; then
-    if id -nG "$USER" | tr ' ' '\n' | grep -qx docker; then
+    # $USER needs a fallback: under `set -u`, an unset $USER (common in
+    # minimal containers) would abort the whole sourced script, not just
+    # this check. Same hazard documented in 10-shell/setup.sh.
+    if id -nG "${USER:-$(id -un)}" | tr ' ' '\n' | grep -qx docker; then
         log_info "already in the docker group"
     else
-        if run_sudo usermod -aG docker "$USER"; then
+        if run_sudo usermod -aG docker "${USER:-$(id -un)}"; then
             summary_note "Added to the docker group — log out and back in before 'docker' works without sudo."
         else
             log_error "usermod failed; docker group membership not granted"

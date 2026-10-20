@@ -159,7 +159,7 @@ setup() {
 # apt_add_repo (lib/apt.sh) and legitimately remain in committed repos
 # files. UBUNTU_CODENAME is not one of this engine's placeholders — if it
 # shows up, it is a leftover from authoring against the wrong token.
-@test "no repos line still contains the codename placeholder" {
+@test "no repos line uses the wrong UBUNTU_CODENAME token instead of @CODENAME@" {
     ! grep -rq 'UBUNTU_CODENAME' "$MODULES_DIR"/*/repos 2>/dev/null
 }
 
@@ -232,6 +232,15 @@ setup() {
 # mutation (the property that actually matters) without being fragile to
 # those tools' own init behavior.
 _known_external_tool_noise() {
+    case $1 in
+        # conf.d/toolchains.fish is the one file a module (20-toolchains)
+        # actually generates under .config/fish — a genuine dry-run write
+        # here must NOT be masked by the wholesale .config/fish/* allowance
+        # below, so it is rejected before falling through to that case.
+        .config/fish/conf.d/toolchains.fish)
+            return 1
+            ;;
+    esac
     case $1 in
         # The parent dirs themselves (.config, .local, .local/share) are
         # allowed too: mkdir -p brings them along as a side effect of

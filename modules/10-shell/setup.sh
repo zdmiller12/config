@@ -4,7 +4,11 @@
 MODULE_FAILED=0
 
 # 1. Dotfile symlinks.
-link_manifest "$DOTFILES_DIR/links" "$DOTFILES_DIR"
+# $DOTFILES_DIR is always set by bootstrap.sh, but a module sourced manually
+# outside the engine (e.g. for local testing) would otherwise abort here
+# under `set -u`. The fallback is intentionally empty: it degrades to a
+# nonexistent manifest path rather than guessing a location.
+link_manifest "${DOTFILES_DIR:-}/links" "${DOTFILES_DIR:-}"
 
 # 2. git identity, written outside the repo so nothing personal is committed.
 # Both fields are required: a `[user]` block with only one of name/email set

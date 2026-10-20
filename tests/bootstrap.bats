@@ -137,6 +137,42 @@ EOF
     [ "$found_other" -eq 0 ]
 }
 
+@test "select_modules does not persist the saved selection on an --only run, but does on a plain run (I1)" {
+    # DRY_RUN=0 is load-bearing: localenv_set short-circuits under DRY_RUN
+    # (lib/module.sh), which is exactly why no dry run ever caught this bug.
+    DRY_RUN=0
+    mkdir -p "$MODULES_DIR/00-core" "$MODULES_DIR/10-other" "$MODULES_DIR/60-nas"
+    for m in 00-core 10-other 60-nas; do
+        printf 'name=%s\nsummary=%s\ndefault=on\n' "$m" "$m" > "$MODULES_DIR/$m/meta"
+    done
+
+    printf 'MODULE_SELECTION="00-core 10-other 60-nas"\n' > "$LOCAL_ENV"
+    localenv_load
+
+    # A targeted --only run must not overwrite the saved selection. Use a
+    # plain command substitution, not bats' `run` helper: lib/log.sh defines
+    # a project-level `run()` (the dry-run-aware command wrapper) that is
+    # sourced into this shell and shadows bats' own `run`.
+    ONLY_MODULES=(60-nas)
+    select_modules
+    local saved
+    saved=$(grep '^MODULE_SELECTION=' "$LOCAL_ENV")
+    [ "$saved" = 'MODULE_SELECTION="00-core 10-other 60-nas"' ]
+
+    # Corrupt the on-disk value (without touching the in-shell $MODULE_SELECTION
+    # that select_modules reads) so the next assertion can tell "written" apart
+    # from "coincidentally identical".
+    printf 'MODULE_SELECTION="bogus"\n' > "$LOCAL_ENV"
+
+    # A plain run (neither --only nor --skip) must persist the replayed
+    # selection, overwriting the corrupted value above.
+    ONLY_MODULES=()
+    SKIP_MODULES=()
+    select_modules
+    saved=$(grep '^MODULE_SELECTION=' "$LOCAL_ENV")
+    [ "$saved" = 'MODULE_SELECTION="00-core 10-other 60-nas"' ]
+}
+
 @test "sudo_validate under dry-run invokes no sudo" {
     DRY_RUN=1
     sudo() { echo "SUDO CALLED" >&2; return 1; }
