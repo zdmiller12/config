@@ -1,0 +1,4 @@
+name=10-shell
+summary=fish shell, dotfiles, git identity, SSH key
+default=on
+container=yes
