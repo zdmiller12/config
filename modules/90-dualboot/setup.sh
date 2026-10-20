@@ -85,7 +85,18 @@ if (( windows_in_menu )); then
     [[ $PATCH_RESULT == changed ]] && hidden_changed=1
     patch_kv_set /etc/default/grub GRUB_TIMEOUT 0
     [[ $PATCH_RESULT == changed ]] && hidden_changed=1
-    if (( hidden_changed )); then
+
+    # Re-run update-grub if the config was just changed, OR if grub.cfg does
+    # not yet carry the hidden directive — e.g. a previous update-grub call
+    # here failed, leaving /etc/default/grub correct but grub.cfg stale.
+    # Without this second condition, a failed update-grub self-heals into a
+    # permanently-visible menu that re-runs report as successful, because
+    # patch_kv_set sees both keys already at their target value and never
+    # fires the retry. grub-mkconfig's make_timeout() (grub-mkconfig_lib)
+    # emits the literal line `set timeout_style=hidden` only when
+    # GRUB_TIMEOUT_STYLE=hidden at generation time; confirmed present in
+    # this machine's real /boot/grub/grub.cfg today.
+    if (( hidden_changed )) || ! grep -q 'timeout_style=hidden' /boot/grub/grub.cfg 2>/dev/null; then
         if run_sudo update-grub; then
             summary_note "GRUB menu is now hidden. Hold Esc at power-on to show it."
         else
