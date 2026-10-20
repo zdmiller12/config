@@ -3551,7 +3551,7 @@ return 0
 - [ ] **Step 5: Verify the dry run**
 
 Run: `./bootstrap.sh --dry-run --yes --only 30-dev`
-Expected: two keyring fetches, two `write /etc/apt/sources.list.d/*.list` lines, exactly one `apt-get update` (the coalescing from Task 5 — if you see two, `apt_update_once` is broken), one batch `apt-get install -y code docker-ce …`, then the extension and `usermod` lines.
+Expected: two keyring fetches, two `write /etc/apt/sources.list.d/*.list` lines, then `apt-get update` **twice** — once for `00-core` (force-included, installs first) and once for `30-dev`, whose two newly registered repos correctly invalidate the cache. Within a single module it must appear only once; that is the coalescing from Task 5, one batch `apt-get install -y code docker-ce …`, then the extension and `usermod` lines.
 
 - [ ] **Step 6: Verify the sources lines are well formed**
 
