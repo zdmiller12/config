@@ -1,0 +1,4 @@
+name=90-bluetooth-autoreconnect
+summary=Reconnect bluetooth devices automatically
+default=off
+container=no
