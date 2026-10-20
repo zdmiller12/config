@@ -1,0 +1,9 @@
+# VSCode
+code
+
+# Docker CE and the plugins actually in use on this machine
+docker-ce
+docker-ce-cli
+containerd.io
+docker-buildx-plugin
+docker-compose-plugin
