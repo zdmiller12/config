@@ -17,6 +17,22 @@ apt_update_once() {
     APT_UPDATED=1
 }
 
+# apt_codename — the running system's release codename, for repos that are
+# codename-keyed (e.g. Docker). Baking a codename into the committed sources
+# line would point the repo at whatever release authored it, not the
+# machine it runs on, so this is resolved at runtime instead.
+apt_codename() {
+    local codename=""
+    if [[ -r /etc/os-release ]]; then
+        # shellcheck disable=SC1091
+        codename=$(. /etc/os-release && printf '%s' "${VERSION_CODENAME:-}")
+    fi
+    if [[ -z $codename ]] && command -v lsb_release > /dev/null 2>&1; then
+        codename=$(lsb_release -cs 2>/dev/null || true)
+    fi
+    printf '%s' "$codename"
+}
+
 # apt_add_repo NAME KEYRING_URL SOURCES_LINE
 apt_add_repo() {
     local name=$1 key_url=$2 sources_line=$3
@@ -52,6 +68,17 @@ apt_add_repo() {
     fi
 
     sources_line=${sources_line//@KEYRING@/$keyring}
+
+    if [[ $sources_line == *@CODENAME@* ]]; then
+        local codename
+        codename=$(apt_codename)
+        if [[ -z $codename ]]; then
+            log_error "could not determine the running system's codename for $name"
+            return 1
+        fi
+        sources_line=${sources_line//@CODENAME@/$codename}
+    fi
+
     patch_write_if_different "$list" "$sources_line"
     [[ $PATCH_RESULT == changed ]] && apt_mark_stale
     return 0

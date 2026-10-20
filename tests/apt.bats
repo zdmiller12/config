@@ -59,6 +59,21 @@ teardown() { teardown_tmpdir; }
     grep -q "signed-by=$KEYRING_DIR/example.gpg" "$SOURCES_DIR/example.list"
 }
 
+@test "apt_add_repo substitutes the running codename into the sources line" {
+    DRY_RUN=0
+    SOURCES_DIR="$TMPTEST/sources"
+    KEYRING_DIR="$TMPTEST/keyrings"
+    mkdir -p "$SOURCES_DIR" "$KEYRING_DIR"
+    # Pretend the keyring already exists so no network call is attempted.
+    touch "$KEYRING_DIR/example.gpg"
+    local codename
+    codename=$(apt_codename)
+    apt_add_repo example https://example.invalid/key.asc \
+        'deb [signed-by=@KEYRING@] https://example.invalid/apt @CODENAME@ stable'
+    grep -q " $codename stable" "$SOURCES_DIR/example.list"
+    ! grep -q '@CODENAME@' "$SOURCES_DIR/example.list"
+}
+
 @test "apt_add_repo dearmors an ASCII-armored key but not a binary one" {
     DRY_RUN=0
     SOURCES_DIR="$TMPTEST/sources"
