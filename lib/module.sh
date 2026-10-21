@@ -156,7 +156,11 @@ module_run() {
         # be the `exit` call if later lines ran. Capture it in a sentinel so
         # a later successful command can't mask the original failure.
         local _setup_exit=""
-        # shellcheck disable=SC2329 # invoked indirectly, if at all, by setup.sh
+        # Both codes are the same false positive seen from two angles: with no
+        # call site in this file, shellcheck reads the definition as never
+        # invoked (SC2329) and its body as unreachable (SC2317). setup.sh is
+        # the caller, and it is sourced rather than parsed with this file.
+        # shellcheck disable=SC2329,SC2317 # invoked indirectly, if at all, by setup.sh
         exit() { _setup_exit=${1:-0}; return "${1:-0}"; }
         set +e
         # shellcheck disable=SC1090,SC1091
