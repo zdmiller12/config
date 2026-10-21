@@ -80,10 +80,11 @@ Captured state that the wipe would destroy:
       terminal profile. `dconf dump` emits only deviations from the GNOME
       defaults, so empty output means the profile was never customized and
       there is nothing to carry across — not that the command failed.
-- [ ] Copy out `~/.config/Code/User/settings.json` and `keybindings.json`.
-      `30-dev` restores the extension set but not the settings; if you work in
-      the VS Code integrated terminal, your terminal configuration lives here
-      rather than in dconf.
+- [ ] Confirm VS Code Settings Sync has pushed since your last settings edit.
+      Sync — not this repo — owns `settings.json`, `keybindings.json`,
+      snippets, and UI state; an unpushed local edit is the only thing the wipe
+      would take. Compare the mtimes of `~/.config/Code/User/settings.json` and
+      `~/.config/Code/User/sync/settings/lastSyncsettings.json`.
 - [ ] **Confirm every cloud-sync folder has finished syncing.** Nothing under
       `~/MEGA` is recreated by any module.
 
@@ -105,8 +106,10 @@ both interactive paths, GNOME, the NAS, bluetooth, and GRUB.
       numbered fallback if it is absent.
 - [ ] Restore the terminal profile — only if the pre-wipe `dconf dump` produced
       output: `dconf load /org/gnome/terminal/ < <your dump>`.
-- [ ] Restore `~/.config/Code/User/settings.json` and `keybindings.json` from
-      the copies taken before the wipe.
+- [ ] Sign in to VS Code Settings Sync and let it pull. This is what restores
+      the editor and integrated-terminal configuration; `30-dev` installs the
+      extension set but no settings. Until you sign in, the fresh machine runs
+      on VS Code defaults.
 - [ ] Re-add any `~/.ssh/config` host entries by hand — this repo does not
       commit or restore them.
 
