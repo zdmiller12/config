@@ -10,8 +10,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Pinned to an upstream release rather than installed from apt. The
+      # runner image's shellcheck floats with the image (ubuntu-latest ships
+      # 0.9.0 today), which makes a lint result depend on when the job ran
+      # rather than on what the code says. The versions genuinely disagree:
+      # 0.9.0's SC2317 fires on the indirectly-invoked exit() shadow in
+      # lib/module.sh that 0.11.0 correctly stays quiet about. Bumping this
+      # deliberately keeps any new finding attached to a reviewable commit.
       - name: Install shellcheck
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
+        env:
+          SHELLCHECK_VERSION: v0.11.0
+          SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+        run: |
+          url=https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz
+          curl -fsSL "$url" -o /tmp/shellcheck.tar.xz
+          echo "${SHELLCHECK_SHA256}  /tmp/shellcheck.tar.xz" | sha256sum -c -
+          tar -xJf /tmp/shellcheck.tar.xz -C /tmp
+          sudo install -m 0755 "/tmp/shellcheck-${SHELLCHECK_VERSION}/shellcheck" \
+            /usr/local/bin/shellcheck
+          shellcheck --version
       - name: Shellcheck the engine and all module setup scripts
         run: |
           # bootstrap.sh and lib/*.sh are designed to be sourced together as
@@ -30,7 +47,7 @@ jobs:
           shellcheck tests/container-smoke.sh
       - name: Check fish syntax where fish files are committed
         run: |
-          sudo apt-get install -y fish
+          sudo apt-get update && sudo apt-get install -y fish
           for f in $(find dotfiles -name '*.fish'); do
             fish -n "$f" || exit 1
           done
