@@ -1,8 +1,8 @@
-[user]
-	name = zdmiller12
-	email = zdmiller12@gmail.com
+# Symlinked from ~/git/config/dotfiles/git/gitconfig by the 10-shell module.
+# [user] is deliberately absent — 10-shell writes it to ~/.gitconfig.local
+# from prompted values so nothing personal is committed.
 [pull]
-	rebase = true
+  rebase = true
 [branch]
   autosetuprebase = always
 [core]
@@ -38,7 +38,14 @@
   t = tag -n3
   unstage = reset HEAD --
 [filter "lfs"]
-	clean = git-lfs clean -- %f
-	smudge = git-lfs smudge -- %f
-	process = git-lfs filter-process
-	required = true
+  clean = git-lfs clean -- %f
+  smudge = git-lfs smudge -- %f
+  process = git-lfs filter-process
+  required = true
+
+# Local identity is included last so it overrides anything in this file —
+# git applies [include] in place, and later values win. Keeping this at the
+# end means a future [user] added here could never silently shadow the
+# prompted identity in ~/.gitconfig.local.
+[include]
+  path = ~/.gitconfig.local

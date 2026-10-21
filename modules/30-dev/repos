@@ -1,0 +1,3 @@
+# name|keyring-url|sources-line
+vscode|https://packages.microsoft.com/keys/microsoft.asc|deb [arch=amd64,arm64,armhf signed-by=@KEYRING@] https://packages.microsoft.com/repos/code stable main
+docker|https://download.docker.com/linux/ubuntu/gpg|deb [arch=amd64 signed-by=@KEYRING@] https://download.docker.com/linux/ubuntu @CODENAME@ stable

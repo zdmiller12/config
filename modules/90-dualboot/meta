@@ -1,0 +1,4 @@
+name=90-dualboot
+summary=GRUB hidden menu, Windows in the GRUB menu, winboot
+default=off
+container=no

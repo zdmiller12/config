@@ -1,0 +1,4 @@
+name=30-dev
+summary=VSCode and its extensions, Docker CE
+default=on
+container=no
