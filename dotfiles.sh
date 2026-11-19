@@ -95,6 +95,38 @@ dotfiles_tildify() {
     printf '%s\n' "$path"
 }
 
+# dotfiles_infer_repo_path LIVE_PATH — a best-effort repo-relative path.
+#
+# Always shown for confirmation, never applied blind, because the existing
+# manifest contains two precedents no single rule satisfies:
+#
+#   ~/.config/fish/functions/usd.fish -> fish/functions/usd.fish   (strip ~/.config/)
+#   ~/.gitconfig                      -> git/gitconfig             (strip the dot AND
+#                                                                   invent the grouping)
+#
+# Nothing can derive "git" from ".gitconfig", so the rules below produce
+# `gitconfig` for that case and rely on the user editing the prompt.
+#
+# Rules, in order:
+#   under ~/.config/   the path relative to ~/.config
+#   name has a suffix  <stem>/<name>, with any leading dot stripped
+#   no suffix          <name>, with any leading dot stripped
+dotfiles_infer_repo_path() {
+    local live=$1 base stem
+    if [[ $live == "$HOME/.config/"* ]]; then
+        printf '%s\n' "${live#"$HOME/.config/"}"
+        return 0
+    fi
+    base=$(basename "$live")
+    base=${base#.}
+    stem=${base%%.*}
+    if [[ $stem != "$base" ]]; then
+        printf '%s/%s\n' "$stem" "$base"
+        return 0
+    fi
+    printf '%s\n' "$base"
+}
+
 # cmd_status — one line per manifest entry, then the untracked audit.
 # Exit 1 means "something would change", not "something is broken", so a
 # fresh machine reports non-zero until its first link.

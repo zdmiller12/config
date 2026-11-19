@@ -327,3 +327,31 @@ teardown() { teardown_tmpdir; }
     cmd_link > /dev/null
     [ -L "$HOME/.one.conf" ]
 }
+
+@test "infer strips the ~/.config prefix" {
+    [ "$(dotfiles_infer_repo_path "$HOME/.config/fish/functions/usd.fish")" = "fish/functions/usd.fish" ]
+}
+
+@test "infer groups a dotfile with an extension under its stem" {
+    [ "$(dotfiles_infer_repo_path "$HOME/.tmux.conf")" = "tmux/tmux.conf" ]
+}
+
+@test "infer puts an extensionless dotfile at the top level" {
+    [ "$(dotfiles_infer_repo_path "$HOME/.gitconfig")" = "gitconfig" ]
+    [ "$(dotfiles_infer_repo_path "$HOME/.bashrc")" = "bashrc" ]
+}
+
+@test "infer handles a path outside HOME" {
+    [ "$(dotfiles_infer_repo_path /etc/someapp.conf)" = "someapp/someapp.conf" ]
+}
+
+@test "infer handles a non-dot file under HOME" {
+    [ "$(dotfiles_infer_repo_path "$HOME/notes.txt")" = "notes/notes.txt" ]
+}
+
+@test "infer returns zero when called directly" {
+    # Direct invocations: assert the function returns 0 for each rule branch.
+    dotfiles_infer_repo_path "$HOME/.config/fish/config.fish" > /dev/null
+    dotfiles_infer_repo_path "$HOME/.tmux.conf" > /dev/null
+    dotfiles_infer_repo_path "$HOME/.gitconfig" > /dev/null
+}
