@@ -89,3 +89,100 @@ teardown() { teardown_tmpdir; }
 @test "dotfiles_tildify abbreviates HOME itself" {
     [ "$(dotfiles_tildify "$HOME")" = "~" ]
 }
+
+@test "status reports linked and exits zero when everything is linked" {
+    printf 'content\n' > "$DOTFILES_DIR/one.conf"
+    ln -s "$DOTFILES_DIR/one.conf" "$HOME/.one.conf"
+    printf 'one.conf  ~/.one.conf\n' > "$MANIFEST"
+    status=0
+    output="$(cmd_status 2>&1)" || status=$?
+    [ "$status" -eq 0 ]
+    [[ $output == *linked* ]]
+    [[ $output == *"~/.one.conf"* ]]
+}
+
+@test "status reports missing and exits non-zero" {
+    printf 'content\n' > "$DOTFILES_DIR/one.conf"
+    printf 'one.conf  ~/.one.conf\n' > "$MANIFEST"
+    status=0
+    output="$(cmd_status 2>&1)" || status=$?
+    [ "$status" -eq 1 ]
+    [[ $output == *missing* ]]
+}
+
+@test "status reports unlinked for an identical real file" {
+    printf 'content\n' > "$DOTFILES_DIR/one.conf"
+    printf 'content\n' > "$HOME/.one.conf"
+    printf 'one.conf  ~/.one.conf\n' > "$MANIFEST"
+    status=0
+    output="$(cmd_status 2>&1)" || status=$?
+    [ "$status" -eq 1 ]
+    [[ $output == *unlinked* ]]
+}
+
+@test "status reports DIVERGED for a differing real file" {
+    printf 'content\n' > "$DOTFILES_DIR/one.conf"
+    printf 'other\n' > "$HOME/.one.conf"
+    printf 'one.conf  ~/.one.conf\n' > "$MANIFEST"
+    status=0
+    output="$(cmd_status 2>&1)" || status=$?
+    [ "$status" -eq 1 ]
+    [[ $output == *DIVERGED* ]]
+}
+
+@test "status reports BROKEN for a manifest entry with no repo file" {
+    printf 'absent.conf  ~/.one.conf\n' > "$MANIFEST"
+    status=0
+    output="$(cmd_status 2>&1)" || status=$?
+    [ "$status" -eq 1 ]
+    [[ $output == *BROKEN* ]]
+}
+
+@test "status lists repo files no manifest entry references" {
+    printf 'content\n' > "$DOTFILES_DIR/one.conf"
+    ln -s "$DOTFILES_DIR/one.conf" "$HOME/.one.conf"
+    mkdir -p "$DOTFILES_DIR/ssh"
+    printf 'template\n' > "$DOTFILES_DIR/ssh/config.template"
+    printf 'one.conf  ~/.one.conf\n' > "$MANIFEST"
+    status=0
+    output="$(cmd_status 2>&1)" || status=$?
+    [[ $output == *"ssh/config.template"* ]]
+}
+
+@test "status untracked files do not affect the exit status" {
+    printf 'content\n' > "$DOTFILES_DIR/one.conf"
+    ln -s "$DOTFILES_DIR/one.conf" "$HOME/.one.conf"
+    printf 'orphan\n' > "$DOTFILES_DIR/orphan.conf"
+    printf 'one.conf  ~/.one.conf\n' > "$MANIFEST"
+    status=0
+    output="$(cmd_status 2>&1)" || status=$?
+    [ "$status" -eq 0 ]
+    [[ $output == *orphan.conf* ]]
+}
+
+@test "status does not list the manifest itself as untracked" {
+    printf 'content\n' > "$DOTFILES_DIR/one.conf"
+    ln -s "$DOTFILES_DIR/one.conf" "$HOME/.one.conf"
+    printf 'one.conf  ~/.one.conf\n' > "$MANIFEST"
+    status=0
+    output="$(cmd_status 2>&1)" || status=$?
+    [[ $output != *"  links"* ]]
+}
+
+@test "status completes when called directly on a fully linked manifest" {
+    # Direct invocation on the all-linked case, the only state returning 0.
+    printf 'content\n' > "$DOTFILES_DIR/one.conf"
+    ln -s "$DOTFILES_DIR/one.conf" "$HOME/.one.conf"
+    printf 'one.conf  ~/.one.conf\n' > "$MANIFEST"
+    cmd_status > /dev/null
+}
+
+@test "status completes when called directly with an unreferenced repo file" {
+    # Exercises cmd_status_untracked's array handling: an empty `referenced`
+    # array under `set -u` is a classic abort.
+    printf 'content\n' > "$DOTFILES_DIR/one.conf"
+    ln -s "$DOTFILES_DIR/one.conf" "$HOME/.one.conf"
+    printf 'orphan\n' > "$DOTFILES_DIR/orphan.conf"
+    printf 'one.conf  ~/.one.conf\n' > "$MANIFEST"
+    cmd_status > /dev/null
+}

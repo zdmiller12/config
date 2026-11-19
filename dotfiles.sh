@@ -104,7 +104,93 @@ dotfiles_tildify() {
     printf '%s\n' "$path"
 }
 
-cmd_status() { log_error "cmd_status is not implemented yet"; return 1; }
+# cmd_status — one line per manifest entry, then the untracked audit.
+# Exit 1 means "something would change", not "something is broken", so a
+# fresh machine reports non-zero until its first link.
+cmd_status() {
+    local rel dest state shown pending=0
+    log_step "Dotfile links"
+    while IFS=$'\t' read -r rel dest; do
+        state=$(link_state "$DOTFILES_DIR/$rel" "$dest")
+        shown=$(dotfiles_tildify "$dest")
+        case $state in
+            linked)
+                log_ok "$(printf '%-10s %-30s %s' linked "$rel" "$shown")"
+                ;;
+            missing)
+                log_info "$(printf '%-10s %-30s %s' missing "$rel" "$shown")"
+                pending=1
+                ;;
+            unlinked)
+                log_warn "$(printf '%-10s %-30s %s' unlinked "$rel" "$shown")"
+                # Deliberately does not say "a real file": link_state's
+                # unlinked branch uses -f, which dereferences symlinks, so
+                # this state also covers a symlink pointing somewhere else
+                # whose target happens to match the repo file byte for byte.
+                log_warn "           content matches the repo; ./dotfiles.sh link will point it at dotfiles/$rel"
+                pending=1
+                ;;
+            diverged)
+                log_warn "$(printf '%-10s %-30s %s' DIVERGED "$rel" "$shown")"
+                link_warn_skip "$dest"
+                pending=1
+                ;;
+            broken)
+                log_error "$(printf '%-10s %-30s %s' BROKEN "$rel" "$shown")"
+                log_error "           dotfiles/$rel is in the manifest but not in the repo"
+                pending=1
+                ;;
+        esac
+    done < <(link_manifest_entries "$MANIFEST")
+
+    cmd_status_untracked
+
+    if (( pending )); then
+        return 1
+    fi
+    return 0
+}
+
+# cmd_status_untracked — files under dotfiles/ that no manifest entry names.
+#
+# Informational only, and deliberately so: some are legitimately owned by a
+# module rather than the manifest. fish/functions/winboot.fish is linked by
+# 90-dualboot, because winboot must only land on a dual-boot machine, and
+# ssh/config.template is rendered by 60-nas rather than linked at all. There
+# is no ignore list, because that would be machinery for two known entries.
+cmd_status_untracked() {
+    local referenced=() untracked=() rel dest found candidate seen
+    while IFS=$'\t' read -r rel dest; do
+        referenced+=("$rel")
+    done < <(link_manifest_entries "$MANIFEST")
+
+    while IFS= read -r found; do
+        candidate=${found#"$DOTFILES_DIR/"}
+        if [[ $candidate == links ]]; then
+            continue
+        fi
+        seen=0
+        for rel in "${referenced[@]:-}"; do
+            if [[ $rel == "$candidate" ]]; then
+                seen=1
+            fi
+        done
+        if (( ! seen )); then
+            untracked+=("$candidate")
+        fi
+    done < <(find "$DOTFILES_DIR" -type f | sort)
+
+    if (( ${#untracked[@]} == 0 )); then
+        return 0
+    fi
+    printf '\n'
+    log_step "In dotfiles/ but not in the manifest — linked by a module, or not linked at all"
+    for candidate in "${untracked[@]}"; do
+        log_info "  $candidate"
+    done
+    return 0
+}
+
 cmd_link()   { log_error "cmd_link is not implemented yet"; return 1; }
 cmd_adopt()  { log_error "cmd_adopt is not implemented yet"; return 1; }
 
