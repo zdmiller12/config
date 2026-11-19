@@ -383,8 +383,12 @@ teardown() { teardown_tmpdir; }
     [ -L "$HOME/.one.conf" ]
     [ "$(cat "$DOTFILES_DIR/one/one.conf")" = "live content" ]
     [ "$(cat "$HOME/.one.conf")" = "live content" ]
-    grep -q 'one/one.conf' "$MANIFEST"
-    grep -q '~/.one.conf' "$MANIFEST"
+    # Assert the parsed entry, not two substrings. `grep -q` on each field
+    # separately would pass even with no separator between them, which is
+    # exactly the corruption this file is prone to.
+    mapfile -t entries < <(link_manifest_entries "$MANIFEST" 2>/dev/null)
+    [ "${#entries[@]}" -eq 1 ]
+    [ "${entries[0]}" = "$(printf 'one/one.conf\t%s/.one.conf' "$HOME")" ]
 }
 
 @test "adopt appends the manifest entry with the repo's column alignment" {
@@ -393,7 +397,21 @@ teardown() { teardown_tmpdir; }
     cmd_adopt
     status=0
     output="$(grep 'one/one.conf' "$MANIFEST" 2>&1)" || status=$?
-    [ "$output" = "$(printf '%-30s%s' 'one/one.conf' '~/.one.conf')" ]
+    [ "$output" = "$(printf '%-29s %s' 'one/one.conf' '~/.one.conf')" ]
+}
+
+@test "adopt keeps a long repo path parseable in the manifest" {
+    # Regression: %-30s%s emits NO separator once the path reaches 30 chars,
+    # so the entry parses as having no destination and the adopted file
+    # silently stops being linked. 38 chars here.
+    printf 'live\n' > "$HOME/.one.conf"
+    TARGETS=("$HOME/.one.conf" "fish/functions/a-rather-long-name.fish")
+    status=0
+    output="$(cmd_adopt 2>&1)" || status=$?
+    [ "$status" -eq 0 ]
+    mapfile -t entries < <(link_manifest_entries "$MANIFEST" 2>/dev/null)
+    [ "${#entries[@]}" -eq 1 ]
+    [ "${entries[0]}" = "$(printf 'fish/functions/a-rather-long-name.fish\t%s/.one.conf' "$HOME")" ]
 }
 
 @test "adopt writes a tilde rather than an expanded HOME" {
@@ -415,8 +433,18 @@ teardown() { teardown_tmpdir; }
 }
 
 @test "adopt overwrites a differing repo file so local wins" {
+    # git init so dotfiles_is_dirty takes its real "git repo, path clean"
+    # path rather than the "not a git repo at all" early return. Both answer
+    # "not dirty", so without this the clean-path branch is never exercised.
+    git init -q "$TMPTEST/gitrepo"
+    REPO_ROOT="$TMPTEST/gitrepo"
+    DOTFILES_DIR="$REPO_ROOT/dotfiles"
+    MANIFEST="$DOTFILES_DIR/links"
     mkdir -p "$DOTFILES_DIR/one"
     printf 'repo\n' > "$DOTFILES_DIR/one/one.conf"
+    : > "$MANIFEST"
+    git -C "$REPO_ROOT" add -A
+    git -C "$REPO_ROOT" -c user.email=t@example.com -c user.name=t commit -q -m init
     printf 'live\n' > "$HOME/.one.conf"
     TARGETS=("$HOME/.one.conf" "one/one.conf")
     status=0
@@ -486,6 +514,28 @@ teardown() { teardown_tmpdir; }
     [ -f "$DOTFILES_DIR/one" ]
     [ ! -d "$DOTFILES_DIR/one" ]
     grep -q '^one  *~/\.one\.conf$' "$MANIFEST"
+}
+
+@test "adopt refuses every traversal form the guard lists" {
+    # The guard's case has five arms; two were covered. A regression dropping
+    # any single arm would otherwise go unnoticed, and this one is a guard
+    # against writing outside the repo, so partial coverage is the wrong
+    # trade. ".." bare, mid-path, and trailing are the three untested arms.
+    printf 'live\n' > "$HOME/.one.conf"
+    for bad in ".." "one/../../escaped.conf" "one/.."; do
+        TARGETS=("$HOME/.one.conf" "$bad")
+        status=0
+        output="$(cmd_adopt 2>&1)" || status=$?
+        [ "$status" -eq 2 ]
+        [ -f "$HOME/.one.conf" ]
+        [ ! -L "$HOME/.one.conf" ]
+    done
+    # A legitimate name merely containing ".." must still be accepted.
+    TARGETS=("$HOME/.one.conf" "weird..name.conf")
+    status=0
+    output="$(cmd_adopt 2>&1)" || status=$?
+    [ "$status" -eq 0 ]
+    [ -f "$DOTFILES_DIR/weird..name.conf" ]
 }
 
 @test "adopt refuses an absolute repo path" {

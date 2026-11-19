@@ -345,7 +345,12 @@ dotfiles_manifest_append() {
         _log DRY '0;36' "append to dotfiles/links: $rel $shown"
         return 0
     fi
-    printf '%-30s%s\n' "$rel" "$shown" >> "$MANIFEST"
+    # %-29s plus a literal space, NOT %-30s. With %-30s a repo path of 30+
+    # characters gets no separator at all — the fields run together and
+    # link_manifest_entries rejects the line as having no destination, so the
+    # freshly adopted dotfile silently stops being linked. Both forms put the
+    # destination at column 31 for shorter paths, matching the existing file.
+    printf '%-29s %s\n' "$rel" "$shown" >> "$MANIFEST"
     log_info "manifest entry added: $rel → $shown"
 }
 
@@ -356,7 +361,7 @@ dotfiles_manifest_append() {
 # order is chosen so that any failure leaves the live file intact: copy in,
 # verify, only then remove and link. Never `mv` as the first step.
 cmd_adopt() {
-    local live rel target resolved inferred
+    local live rel target resolved inferred tmplink
     if (( ${#TARGETS[@]} == 0 )); then
         log_error "adopt needs a path: ./dotfiles.sh adopt ~/.tmux.conf"
         return 2
@@ -377,6 +382,16 @@ cmd_adopt() {
     if [[ -L $live ]]; then
         resolved=$(readlink -f "$live")
         if [[ $resolved == "$DOTFILES_DIR/"* ]]; then
+            # readlink -f canonicalises even when the final component is
+            # missing, so a symlink into the repo whose target was deleted
+            # still lands here. Reporting that as "already linked" would call
+            # a broken config healthy and exit 0 — link_state classifies the
+            # same situation as `broken`, and adopt must not disagree.
+            if [[ ! -e $resolved ]]; then
+                log_error "$(dotfiles_tildify "$live") points at ${resolved#"$REPO_ROOT/"}, which is missing from the repo"
+                log_error "    restore that file, or remove the dangling link and adopt again"
+                return 1
+            fi
             log_ok "already linked: $(dotfiles_tildify "$live") → ${resolved#"$REPO_ROOT/"}"
             return 0
         fi
@@ -434,7 +449,6 @@ cmd_adopt() {
     fi
 
     run mkdir -p "$(dirname "$target")"
-    status=0
     # -L, not -a. `cp -a` implies -d (no-dereference), so adopting a live
     # file that is itself a symlink pointing outside the repo would put a
     # SYMLINK into dotfiles/ aimed at an absolute external path — committed,
@@ -446,14 +460,29 @@ cmd_adopt() {
         log_error "copy verification failed; $(dotfiles_tildify "$live") was left untouched"
         return 1
     fi
-    run rm -f "$live"
-    # In a dry run nothing was copied, so link_file would correctly complain
-    # that its source does not exist. Describe the link instead of attempting
-    # one, the same way lib/log.sh's own dry-run arm does.
+    # Atomic swap, not remove-then-link. `rm` followed by `ln` leaves a window
+    # where the live path holds nothing at all: if the link step fails there
+    # (ENOSPC, a permissions change), the user's config file is simply gone
+    # until they re-run `link`. Staging the symlink beside the live path and
+    # renaming it over replaces in one syscall, so the path always holds
+    # either the original file or the finished symlink — which is what this
+    # function's header comment promises.
+    #
+    # In a dry run nothing was copied, so there is no link to stage; describe
+    # it instead, the way lib/log.sh's own dry-run arm does.
     if (( DRY_RUN )); then
-        _log DRY '0;36' "ln -s $target $live"
-    elif ! link_file "$target" "$live"; then
-        return 1
+        _log DRY '0;36' "ln -s $target $live (replacing the live file)"
+    else
+        tmplink="$live.dotfiles-adopt-$$"
+        if ! run ln -s "$target" "$tmplink"; then
+            log_error "could not stage a symlink at $tmplink; $(dotfiles_tildify "$live") is untouched"
+            return 1
+        fi
+        if ! run mv -T "$tmplink" "$live"; then
+            run rm -f "$tmplink"
+            log_error "could not replace $(dotfiles_tildify "$live"); it is untouched"
+            return 1
+        fi
     fi
     dotfiles_manifest_append "$rel" "$live"
 
