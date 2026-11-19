@@ -152,9 +152,8 @@ EOF
 }
 
 @test "link_state returns zero when called directly" {
-    # Direct, un-wrapped invocation. The assertions above read link_state's
-    # stdout through $(...), which would not surface an errexit abort inside
-    # it; this one would. See the errexit note in Global Constraints.
+    # Direct, un-wrapped invocation: asserts link_state returns 0, which the
+    # output-comparison tests above do not check independently.
     link_state "$TMPTEST/repo/file.conf" "$TMPTEST/dest/file.conf" > /dev/null
 }
 
@@ -185,17 +184,42 @@ EOF
     [ "${lines[0]}" = "$(printf 'file.conf\t/tmp/one.conf')" ]
 }
 
-@test "link_manifest_entries skips a line with no destination" {
+@test "link_manifest_entries keeps a no-destination diagnostic out of the data stream" {
     printf 'orphan\nfile.conf  /tmp/one.conf\n' > links
-    mapfile -t lines < <(link_manifest_entries links)
-    [ "${#lines[@]}" -eq 2 ]   # one error line, one entry
-    [[ ${lines[0]} == *"manifest line has no destination: orphan"* ]]
-    [ "${lines[1]}" = "$(printf 'file.conf\t/tmp/one.conf')" ]
+    mapfile -t lines < <(link_manifest_entries links 2>/dev/null)
+    [ "${#lines[@]}" -eq 1 ]
+    [ "${lines[0]}" = "$(printf 'file.conf\t/tmp/one.conf')" ]
+}
+
+@test "link_manifest_entries reports a no-destination line on stderr" {
+    printf 'orphan\nfile.conf  /tmp/one.conf\n' > links
+    err="$(link_manifest_entries links 2>&1 > /dev/null)"
+    [[ $err == *"manifest line has no destination: orphan"* ]]
+}
+
+@test "link_manifest does not build a phantom entry from a diagnostic" {
+    # Regression for a real defect: log_error writes to stdout, so before the
+    # >&2 redirect the error line was read back as an entry and link_file was
+    # called with "$root/[ERROR] manifest line has no destination: orphan".
+    printf 'orphan\nfile.conf  %s/dest/one.conf\n' "$TMPTEST" > links
+    status=0
+    output="$(link_manifest links "$TMPTEST/repo" 2>&1)" || status=$?
+    [ -L "$TMPTEST/dest/one.conf" ]
+    [[ $output != *"[ERROR] manifest line has no destination"*"[ERROR] link source does not exist"* ]]
+    [[ $output != *"repo/[ERROR]"* ]]
 }
 
 @test "link_manifest_entries returns zero when called directly" {
-    # The tests above go through `run`, which disables errexit inside the
-    # function and so cannot see an abort. This one can.
-    printf 'file.conf  /tmp/one.conf\n' > links
+    # Direct invocation: asserts the parser returns 0, which the mapfile tests
+    # above cannot check (process substitution does not expose the producer's
+    # status to $?). Uses the comment/blank/multi-entry manifest so the status
+    # of that path is covered, not just a single valid line.
+    printf 'second\n' > repo/second.conf
+    cat > links <<EOF
+# a comment
+
+file.conf    /tmp/one.conf
+second.conf  /tmp/two.conf
+EOF
     link_manifest_entries links > /dev/null
 }

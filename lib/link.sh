@@ -71,7 +71,12 @@ link_manifest_entries() {
             continue
         fi
         if [[ -z $dest ]]; then
-            log_error "manifest line has no destination: $rel"
+            # >&2 is load-bearing. log_error prints to stdout (lib/log.sh:24-28),
+            # and this function's stdout IS the data channel its consumers parse.
+            # Without the redirect the diagnostic becomes a phantom entry: the
+            # reader splits it on tab, gets no tab, and treats the whole message
+            # as a repo-relative path.
+            log_error "manifest line has no destination: $rel" >&2
             continue
         fi
         printf '%s\t%s\n' "$rel" "${dest/#\~/$HOME}"
