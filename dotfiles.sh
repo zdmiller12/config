@@ -271,7 +271,6 @@ cmd_link() {
                 # first so link_file sees a clean destination and does not
                 # write a pointless .bak- copy of content we already have.
                 log_info "converting an identical file to a symlink: $shown"
-                status=0
                 run rm -f "$dest"
                 if ! link_file "$DOTFILES_DIR/$rel" "$dest"; then
                     rc=1
@@ -314,7 +313,154 @@ cmd_link() {
     return "$rc"
 }
 
-cmd_adopt()  { log_error "cmd_adopt is not implemented yet"; return 1; }
+# dotfiles_is_dirty REPO_PATH — does git see any uncommitted change here?
+#
+# Covers staged, unstaged, and untracked in one query. A path outside a git
+# repository counts as clean: there is no review workflow to protect.
+dotfiles_is_dirty() {
+    local path=$1 porcelain
+    if ! git -C "$REPO_ROOT" rev-parse --git-dir > /dev/null 2>&1; then
+        return 1
+    fi
+    porcelain=$(git -C "$REPO_ROOT" status --porcelain -- "$path" 2>/dev/null || true)
+    [[ -n $porcelain ]]
+}
+
+# dotfiles_manifest_append REL DEST — append one aligned entry.
+#
+# Entries are only ever appended; comments and existing lines are never
+# rewritten. `run` cannot carry a redirection (lib/log.sh:41), so the dry-run
+# arm is explicit.
+dotfiles_manifest_append() {
+    local rel=$1 dest=$2 shown existing
+    shown=$(dotfiles_tildify "$dest")
+    while IFS=$'\t' read -r existing _; do
+        if [[ $existing == "$rel" ]]; then
+            log_info "the manifest already lists $rel"
+            return 0
+        fi
+    done < <(link_manifest_entries "$MANIFEST")
+
+    if (( DRY_RUN )); then
+        _log DRY '0;36' "append to dotfiles/links: $rel $shown"
+        return 0
+    fi
+    printf '%-30s%s\n' "$rel" "$shown" >> "$MANIFEST"
+    log_info "manifest entry added: $rel → $shown"
+}
+
+# cmd_adopt — bring a live file into the repo and link it back.
+#
+# The repo becomes the desired state first, then the symlink is made, which
+# is what makes a divergent file reviewable in git rather than lost. Operation
+# order is chosen so that any failure leaves the live file intact: copy in,
+# verify, only then remove and link. Never `mv` as the first step.
+cmd_adopt() {
+    local live rel target resolved inferred
+    if (( ${#TARGETS[@]} == 0 )); then
+        log_error "adopt needs a path: ./dotfiles.sh adopt ~/.tmux.conf"
+        return 2
+    fi
+    live=${TARGETS[0]}
+    live=${live/#\~/$HOME}
+    rel=${TARGETS[1]:-}
+
+    if [[ ! -e $live && ! -L $live ]]; then
+        log_error "no such file: $live"
+        return 2
+    fi
+    if [[ -d $live ]]; then
+        log_error "adopt takes a file, not a directory: $(dotfiles_tildify "$live")"
+        return 2
+    fi
+
+    if [[ -L $live ]]; then
+        resolved=$(readlink -f "$live")
+        if [[ $resolved == "$DOTFILES_DIR/"* ]]; then
+            log_ok "already linked: $(dotfiles_tildify "$live") → ${resolved#"$REPO_ROOT/"}"
+            return 0
+        fi
+    fi
+
+    if [[ -z $rel ]]; then
+        inferred=$(dotfiles_infer_repo_path "$live")
+        # ui_prompt returns early if the variable is already non-empty.
+        DOTFILES_REPO_REL=""
+        ui_prompt DOTFILES_REPO_REL \
+            "Repo path under dotfiles/ for $(dotfiles_tildify "$live")" \
+            "$inferred"
+        rel=$DOTFILES_REPO_REL
+    fi
+    if [[ -z $rel ]]; then
+        log_error "no repo path given"
+        return 2
+    fi
+    # Trim trailing slashes before validating or using the path. Tab
+    # completion onto a directory yields them (~/.config/fish/ infers as
+    # "fish/"), and a rel ending in / makes `cp` copy INTO that directory
+    # under the live basename while the manifest records the directory — a
+    # quietly wrong entry rather than an error. There is only one sensible
+    # reading of a trailing slash, so trim rather than reject.
+    while [[ $rel == */ ]]; do
+        rel=${rel%/}
+    done
+    if [[ -z $rel ]]; then
+        log_error "repo path is empty after trimming slashes"
+        return 2
+    fi
+    # Keep the repo path inside dotfiles/. Reachable three ways, so the check
+    # lives here at the consumer rather than inside the inference: the
+    # inference faithfully passes through a live path containing ..
+    # (~/.config/../../../etc/passwd -> ../../../etc/passwd), the user can
+    # edit the confirmation prompt, and an explicit second argument skips
+    # inference altogether. Escaping would write outside the repo AND append
+    # a manifest entry naming a file git does not track.
+    case $rel in
+        /* | .. | ../* | */../* | */..)
+            log_error "repo path must stay inside dotfiles/: $rel"
+            return 2
+            ;;
+    esac
+    target="$DOTFILES_DIR/$rel"
+
+    if [[ -e $target ]] && ! cmp -s "$live" "$target"; then
+        if (( ! LINK_FORCE )) && dotfiles_is_dirty "$target"; then
+            log_error "dotfiles/$rel has uncommitted changes; adopting would overwrite them"
+            log_error "    review them → git -C $REPO_ROOT diff -- dotfiles/$rel"
+            log_error "    overwrite   → ./dotfiles.sh adopt $(dotfiles_tildify "$live") $rel --force"
+            return 1
+        fi
+        log_warn "dotfiles/$rel differs from the live file; the live file wins"
+    fi
+
+    run mkdir -p "$(dirname "$target")"
+    status=0
+    # -L, not -a. `cp -a` implies -d (no-dereference), so adopting a live
+    # file that is itself a symlink pointing outside the repo would put a
+    # SYMLINK into dotfiles/ aimed at an absolute external path — committed,
+    # that is broken on every other machine. The verification below cannot
+    # catch it either: cmp dereferences both sides, so it would compare the
+    # same file against itself and pass.
+    run cp -L --preserve=mode,timestamps "$live" "$target"
+    if (( ! DRY_RUN )) && ! cmp -s "$live" "$target"; then
+        log_error "copy verification failed; $(dotfiles_tildify "$live") was left untouched"
+        return 1
+    fi
+    run rm -f "$live"
+    # In a dry run nothing was copied, so link_file would correctly complain
+    # that its source does not exist. Describe the link instead of attempting
+    # one, the same way lib/log.sh's own dry-run arm does.
+    if (( DRY_RUN )); then
+        _log DRY '0;36' "ln -s $target $live"
+    elif ! link_file "$target" "$live"; then
+        return 1
+    fi
+    dotfiles_manifest_append "$rel" "$live"
+
+    log_step "Adopted dotfiles/$rel"
+    log_info "Review it with: git -C $REPO_ROOT diff"
+    return 0
+}
 
 main() {
     # shellcheck source=lib/log.sh

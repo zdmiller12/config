@@ -308,6 +308,24 @@ teardown() { teardown_tmpdir; }
     [ ! -e "$HOME/.one.conf" ]
 }
 
+@test "link makes no removal in the unlinked path during a dry run" {
+    # The unlinked arm is the only place cmd_link REMOVES anything (it clears
+    # the destination before relinking so link_file writes no pointless .bak-
+    # copy). That removal goes through the `run` wrapper, so a dry run must
+    # leave the identical live file exactly where it is. The other dry-run
+    # test covers `missing`, where nothing is removed — so without this one, a
+    # future edit swapping `run rm -f` for a bare `rm` would pass the suite.
+    printf 'content\n' > "$DOTFILES_DIR/one.conf"
+    printf 'content\n' > "$HOME/.one.conf"
+    printf 'one.conf  ~/.one.conf\n' > "$MANIFEST"
+    DRY_RUN=1
+    status=0
+    output="$(cmd_link 2>&1)" || status=$?
+    [ -f "$HOME/.one.conf" ]
+    [ ! -L "$HOME/.one.conf" ]
+    [ "$(cat "$HOME/.one.conf")" = content ]
+}
+
 @test "link completes when called directly" {
     # Direct invocation of the unscoped, link-everything path, which
     # exercises the empty-TARGETS array read under set -u.
@@ -354,4 +372,205 @@ teardown() { teardown_tmpdir; }
     dotfiles_infer_repo_path "$HOME/.config/fish/config.fish" > /dev/null
     dotfiles_infer_repo_path "$HOME/.tmux.conf" > /dev/null
     dotfiles_infer_repo_path "$HOME/.gitconfig" > /dev/null
+}
+
+@test "adopt moves a new file into the repo, links it, and records it" {
+    printf 'live content\n' > "$HOME/.one.conf"
+    TARGETS=("$HOME/.one.conf" "one/one.conf")
+    status=0
+    output="$(cmd_adopt 2>&1)" || status=$?
+    [ "$status" -eq 0 ]
+    [ -L "$HOME/.one.conf" ]
+    [ "$(cat "$DOTFILES_DIR/one/one.conf")" = "live content" ]
+    [ "$(cat "$HOME/.one.conf")" = "live content" ]
+    grep -q 'one/one.conf' "$MANIFEST"
+    grep -q '~/.one.conf' "$MANIFEST"
+}
+
+@test "adopt appends the manifest entry with the repo's column alignment" {
+    printf 'live\n' > "$HOME/.one.conf"
+    TARGETS=("$HOME/.one.conf" "one/one.conf")
+    cmd_adopt
+    status=0
+    output="$(grep 'one/one.conf' "$MANIFEST" 2>&1)" || status=$?
+    [ "$output" = "$(printf '%-30s%s' 'one/one.conf' '~/.one.conf')" ]
+}
+
+@test "adopt writes a tilde rather than an expanded HOME" {
+    printf 'live\n' > "$HOME/.one.conf"
+    TARGETS=("$HOME/.one.conf" "one/one.conf")
+    cmd_adopt
+    ! grep -q "$HOME" "$MANIFEST"
+}
+
+@test "adopt is idempotent on an already adopted file" {
+    printf 'live\n' > "$HOME/.one.conf"
+    TARGETS=("$HOME/.one.conf" "one/one.conf")
+    cmd_adopt
+    status=0
+    output="$(cmd_adopt 2>&1)" || status=$?
+    [ "$status" -eq 0 ]
+    [[ $output == *"already linked"* ]]
+    [ "$(grep -c 'one/one.conf' "$MANIFEST")" -eq 1 ]
+}
+
+@test "adopt overwrites a differing repo file so local wins" {
+    mkdir -p "$DOTFILES_DIR/one"
+    printf 'repo\n' > "$DOTFILES_DIR/one/one.conf"
+    printf 'live\n' > "$HOME/.one.conf"
+    TARGETS=("$HOME/.one.conf" "one/one.conf")
+    status=0
+    output="$(cmd_adopt 2>&1)" || status=$?
+    [ "$status" -eq 0 ]
+    [ "$(cat "$DOTFILES_DIR/one/one.conf")" = live ]
+    [ -L "$HOME/.one.conf" ]
+}
+
+@test "adopt links an identical repo file without touching its content" {
+    mkdir -p "$DOTFILES_DIR/one"
+    printf 'same\n' > "$DOTFILES_DIR/one/one.conf"
+    printf 'same\n' > "$HOME/.one.conf"
+    TARGETS=("$HOME/.one.conf" "one/one.conf")
+    status=0
+    output="$(cmd_adopt 2>&1)" || status=$?
+    [ "$status" -eq 0 ]
+    [ "$(cat "$DOTFILES_DIR/one/one.conf")" = same ]
+    [ -L "$HOME/.one.conf" ]
+}
+
+@test "adopt uses the inferred path when none is given" {
+    printf 'live\n' > "$HOME/.tmux.conf"
+    TARGETS=("$HOME/.tmux.conf")
+    status=0
+    output="$(cmd_adopt 2>&1)" || status=$?
+    [ "$status" -eq 0 ]
+    [ -f "$DOTFILES_DIR/tmux/tmux.conf" ]
+}
+
+@test "adopt dereferences a live symlink so the repo gets real content" {
+    # Guards against `cp -a`, which preserves the link and would commit a
+    # symlink to an absolute path outside the repo. cmp cannot detect this
+    # (it dereferences), so the assertion is on the file type directly.
+    mkdir -p "$TMPTEST/elsewhere"
+    printf 'external\n' > "$TMPTEST/elsewhere/real.conf"
+    ln -s "$TMPTEST/elsewhere/real.conf" "$HOME/.one.conf"
+    TARGETS=("$HOME/.one.conf" "one/one.conf")
+    status=0
+    output="$(cmd_adopt 2>&1)" || status=$?
+    [ "$status" -eq 0 ]
+    [ ! -L "$DOTFILES_DIR/one/one.conf" ]
+    [ -f "$DOTFILES_DIR/one/one.conf" ]
+    [ "$(cat "$DOTFILES_DIR/one/one.conf")" = external ]
+}
+
+@test "adopt refuses a repo path that escapes dotfiles/" {
+    printf 'live\n' > "$HOME/.one.conf"
+    TARGETS=("$HOME/.one.conf" "../escaped.conf")
+    status=0
+    output="$(cmd_adopt 2>&1)" || status=$?
+    [ "$status" -eq 2 ]
+    [ ! -e "$DOTFILES_DIR/../escaped.conf" ]
+    # The live file must survive a refusal untouched.
+    [ -f "$HOME/.one.conf" ]
+    [ ! -L "$HOME/.one.conf" ]
+}
+
+@test "adopt trims a trailing slash from the repo path" {
+    printf 'live\n' > "$HOME/.one.conf"
+    TARGETS=("$HOME/.one.conf" "one/")
+    status=0
+    output="$(cmd_adopt 2>&1)" || status=$?
+    [ "$status" -eq 0 ]
+    # Without the trim, cp would copy INTO dotfiles/one/ under the live
+    # basename and the manifest would record "one/" as the entry.
+    [ -f "$DOTFILES_DIR/one" ]
+    [ ! -d "$DOTFILES_DIR/one" ]
+    grep -q '^one  *~/\.one\.conf$' "$MANIFEST"
+}
+
+@test "adopt refuses an absolute repo path" {
+    printf 'live\n' > "$HOME/.one.conf"
+    TARGETS=("$HOME/.one.conf" "$TMPTEST/escaped.conf")
+    status=0
+    output="$(cmd_adopt 2>&1)" || status=$?
+    [ "$status" -eq 2 ]
+    [ ! -e "$TMPTEST/escaped.conf" ]
+    [ -f "$HOME/.one.conf" ]
+}
+
+@test "adopt rejects a directory" {
+    mkdir -p "$HOME/.somedir"
+    TARGETS=("$HOME/.somedir")
+    status=0
+    output="$(cmd_adopt 2>&1)" || status=$?
+    [ "$status" -eq 2 ]
+    [[ $output == *director* ]]
+}
+
+@test "adopt rejects a path that does not exist" {
+    TARGETS=("$HOME/.absent.conf")
+    status=0
+    output="$(cmd_adopt 2>&1)" || status=$?
+    [ "$status" -eq 2 ]
+}
+
+@test "adopt requires a path" {
+    TARGETS=()
+    status=0
+    output="$(cmd_adopt 2>&1)" || status=$?
+    [ "$status" -eq 2 ]
+}
+
+@test "adopt refuses when the repo file has uncommitted changes" {
+    git init -q "$TMPTEST/gitrepo"
+    REPO_ROOT="$TMPTEST/gitrepo"
+    DOTFILES_DIR="$REPO_ROOT/dotfiles"
+    MANIFEST="$DOTFILES_DIR/links"
+    mkdir -p "$DOTFILES_DIR/one"
+    printf 'committed\n' > "$DOTFILES_DIR/one/one.conf"
+    : > "$MANIFEST"
+    git -C "$REPO_ROOT" add -A
+    git -C "$REPO_ROOT" -c user.email=t@example.com -c user.name=t commit -q -m init
+    printf 'unreviewed repo edit\n' > "$DOTFILES_DIR/one/one.conf"
+    printf 'live\n' > "$HOME/.one.conf"
+    TARGETS=("$HOME/.one.conf" "one/one.conf")
+    status=0
+    output="$(cmd_adopt 2>&1)" || status=$?
+    [ "$status" -eq 1 ]
+    [ "$(cat "$DOTFILES_DIR/one/one.conf")" = "unreviewed repo edit" ]
+    [ "$(cat "$HOME/.one.conf")" = live ]
+    [[ $output == *--force* ]]
+}
+
+@test "adopt --force overwrites an uncommitted repo file" {
+    git init -q "$TMPTEST/gitrepo"
+    REPO_ROOT="$TMPTEST/gitrepo"
+    DOTFILES_DIR="$REPO_ROOT/dotfiles"
+    MANIFEST="$DOTFILES_DIR/links"
+    mkdir -p "$DOTFILES_DIR/one"
+    printf 'committed\n' > "$DOTFILES_DIR/one/one.conf"
+    : > "$MANIFEST"
+    git -C "$REPO_ROOT" add -A
+    git -C "$REPO_ROOT" -c user.email=t@example.com -c user.name=t commit -q -m init
+    printf 'unreviewed repo edit\n' > "$DOTFILES_DIR/one/one.conf"
+    printf 'live\n' > "$HOME/.one.conf"
+    TARGETS=("$HOME/.one.conf" "one/one.conf")
+    LINK_FORCE=1
+    status=0
+    output="$(cmd_adopt 2>&1)" || status=$?
+    [ "$status" -eq 0 ]
+    [ "$(cat "$DOTFILES_DIR/one/one.conf")" = live ]
+}
+
+@test "adopt changes nothing during a dry run" {
+    printf 'live\n' > "$HOME/.one.conf"
+    TARGETS=("$HOME/.one.conf" "one/one.conf")
+    DRY_RUN=1
+    status=0
+    output="$(cmd_adopt 2>&1)" || status=$?
+    [ "$status" -eq 0 ]
+    [ ! -e "$DOTFILES_DIR/one/one.conf" ]
+    [ ! -L "$HOME/.one.conf" ]
+    [ "$(cat "$HOME/.one.conf")" = live ]
+    [ ! -s "$MANIFEST" ]
 }
