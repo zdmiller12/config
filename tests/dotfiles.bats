@@ -85,3 +85,7 @@ teardown() { teardown_tmpdir; }
 @test "dotfiles_tildify leaves a path outside HOME alone" {
     [ "$(dotfiles_tildify /etc/hosts)" = "/etc/hosts" ]
 }
+
+@test "dotfiles_tildify abbreviates HOME itself" {
+    [ "$(dotfiles_tildify "$HOME")" = "~" ]
+}

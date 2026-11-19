@@ -40,8 +40,6 @@ Nothing is committed for you. Review with `git diff`, then commit.
 EOF
 }
 
-# LINK_FORCE is read by cmd_link once Task 6 lands, not by this function;
-# shellcheck disable=SC2034
 parse_args() {
     SUBCOMMAND=status
     TARGETS=()
@@ -60,7 +58,16 @@ parse_args() {
     while (( $# )); do
         case $1 in
             --dry-run) DRY_RUN=1 ;;
-            --force) LINK_FORCE=1 ;;
+            --force)
+                # No reader until cmd_link lands in Task 6; shellcheck is
+                # correct that nothing consumes this yet. Scoped to this one
+                # statement on purpose — a disable above parse_args() would
+                # mask SC2034 for DRY_RUN, ASSUME_YES, SUBCOMMAND and TARGETS
+                # too, and parse_args is exactly where an unused variable
+                # would be a real bug. Task 6 removes this directive.
+                # shellcheck disable=SC2034
+                LINK_FORCE=1
+                ;;
             --yes | -y) ASSUME_YES=1 ;;
             -h | --help)
                 usage
@@ -83,6 +90,13 @@ parse_args() {
 # every message and every appended manifest entry shows the portable form.
 dotfiles_tildify() {
     local path=$1
+    # The "$HOME" case is separate because "$HOME"/* requires a literal
+    # slash after it, so a bare $HOME would otherwise print as an absolute
+    # path while every path under it printed as ~/...
+    if [[ $path == "$HOME" ]]; then
+        printf '~\n'
+        return 0
+    fi
     if [[ $path == "$HOME"/* ]]; then
         printf '~%s\n' "${path#"$HOME"}"
         return 0
