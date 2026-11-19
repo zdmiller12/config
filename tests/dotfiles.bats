@@ -662,6 +662,23 @@ teardown() { teardown_tmpdir; }
     [ "${entries[0]}" = "$(printf 'git/gitconfig\t%s/.gitconfig' "$HOME")" ]
 }
 
+@test "Critical 1b: adopt resolves a relative live path before the manifest lookup" {
+    # link_manifest_entries always emits absolute, HOME-expanded destinations.
+    # Without canonicalising $live first, a relative invocation (the shape
+    # tab completion produces after `cd ~`) misses this comparison and
+    # appends a second row for ~/.gitconfig instead of reusing git/gitconfig.
+    mkdir -p "$DOTFILES_DIR/git"
+    printf 'repo stuff\n' > "$DOTFILES_DIR/git/gitconfig"
+    printf 'git/gitconfig                ~/.gitconfig\n' > "$MANIFEST"
+    printf 'live stuff\n' > "$HOME/.gitconfig"
+    status=0
+    output="$(cd "$HOME" && TARGETS=(".gitconfig") && cmd_adopt 2>&1)" || status=$?
+    [ "$status" -eq 0 ]
+    mapfile -t entries < <(link_manifest_entries "$MANIFEST" 2>/dev/null)
+    [ "${#entries[@]}" -eq 1 ]
+    [ "${entries[0]}" = "$(printf 'git/gitconfig\t%s/.gitconfig' "$HOME")" ]
+}
+
 @test "Critical 2: adopt does not call a symlink to the WRONG repo file already linked" {
     # link_state(dotfiles/git/gitconfig, ~/.gitconfig) calls this `diverged`
     # (the live symlink resolves somewhere under dotfiles/, just not to this

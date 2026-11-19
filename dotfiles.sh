@@ -399,6 +399,18 @@ cmd_adopt() {
     live=${live/#\~/$HOME}
     rel=${TARGETS[1]:-}
 
+    # Canonicalise before anything compares or records this path.
+    # link_manifest_entries always emits absolute, HOME-expanded destinations,
+    # so a relative invocation (cd ~; dotfiles.sh adopt .gitconfig — the shape
+    # tab completion produces) would miss the manifest lookup below and append
+    # a second row for a destination that already has one. Worse, a relative
+    # destination written into the manifest is resolved against whatever
+    # directory bootstrap.sh happens to run from.
+    if ! live=$(cd "$(dirname "$live")" 2>/dev/null && printf '%s/%s\n' "$PWD" "$(basename "$live")"); then
+        log_error "cannot resolve path: ${TARGETS[0]}"
+        return 2
+    fi
+
     if [[ ! -e $live && ! -L $live ]]; then
         log_error "no such file: $live"
         return 2
