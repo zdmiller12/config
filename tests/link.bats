@@ -112,3 +112,48 @@ EOF
         [ -n "$dest" ]
     done < "$manifest"
 }
+
+@test "link_state reports broken when the repo file is missing" {
+    [ "$(link_state "$TMPTEST/repo/absent.conf" "$TMPTEST/dest/file.conf")" = broken ]
+}
+
+@test "link_state reports broken even when the destination exists" {
+    printf 'whatever\n' > "$TMPTEST/dest/file.conf"
+    [ "$(link_state "$TMPTEST/repo/absent.conf" "$TMPTEST/dest/file.conf")" = broken ]
+}
+
+@test "link_state reports missing when the destination does not exist" {
+    [ "$(link_state "$TMPTEST/repo/file.conf" "$TMPTEST/dest/file.conf")" = missing ]
+}
+
+@test "link_state reports linked for a symlink pointing at the repo file" {
+    ln -s "$TMPTEST/repo/file.conf" "$TMPTEST/dest/file.conf"
+    [ "$(link_state "$TMPTEST/repo/file.conf" "$TMPTEST/dest/file.conf")" = linked ]
+}
+
+@test "link_state reports unlinked for a real file with identical content" {
+    printf 'source content\n' > "$TMPTEST/dest/file.conf"
+    [ "$(link_state "$TMPTEST/repo/file.conf" "$TMPTEST/dest/file.conf")" = unlinked ]
+}
+
+@test "link_state reports diverged for a real file with different content" {
+    printf 'user data\n' > "$TMPTEST/dest/file.conf"
+    [ "$(link_state "$TMPTEST/repo/file.conf" "$TMPTEST/dest/file.conf")" = diverged ]
+}
+
+@test "link_state reports diverged for a dangling symlink" {
+    ln -s "$TMPTEST/repo/absent.conf" "$TMPTEST/dest/file.conf"
+    [ "$(link_state "$TMPTEST/repo/file.conf" "$TMPTEST/dest/file.conf")" = diverged ]
+}
+
+@test "link_state reports diverged when the destination is a directory" {
+    mkdir -p "$TMPTEST/dest/file.conf"
+    [ "$(link_state "$TMPTEST/repo/file.conf" "$TMPTEST/dest/file.conf")" = diverged ]
+}
+
+@test "link_state returns zero when called directly" {
+    # Direct, un-wrapped invocation. The assertions above read link_state's
+    # stdout through $(...), which would not surface an errexit abort inside
+    # it; this one would. See the errexit note in Global Constraints.
+    link_state "$TMPTEST/repo/file.conf" "$TMPTEST/dest/file.conf" > /dev/null
+}

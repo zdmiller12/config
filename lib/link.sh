@@ -28,6 +28,37 @@ link_file() {
     LINK_RESULT=changed
 }
 
+# link_state SRC DEST — prints one of: linked missing unlinked diverged broken
+#
+# Classification only: it never touches the filesystem, and it makes no policy
+# decision. Callers decide what each state means to them, which is how one
+# implementation serves both an additive bootstrap and an interactive CLI.
+#
+# Order matters. A missing SRC is a manifest bug and outranks whatever happens
+# to be at DEST, so `broken` is tested first.
+link_state() {
+    local src=$1 dest=$2
+    if [[ ! -e $src ]]; then
+        printf 'broken\n'
+        return 0
+    fi
+    if [[ -L $dest ]] && [[ "$(readlink -f "$dest")" == "$(readlink -f "$src")" ]]; then
+        printf 'linked\n'
+        return 0
+    fi
+    # -e alone would call a dangling symlink "missing" and then happily
+    # replace it; -L catches that case so it falls through to diverged.
+    if [[ ! -e $dest && ! -L $dest ]]; then
+        printf 'missing\n'
+        return 0
+    fi
+    if [[ -f $dest ]] && cmp -s "$dest" "$src"; then
+        printf 'unlinked\n'
+        return 0
+    fi
+    printf 'diverged\n'
+}
+
 # link_manifest MANIFEST REPO_ROOT
 link_manifest() {
     local manifest=$1 root=$2
