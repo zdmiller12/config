@@ -4,6 +4,9 @@
 
 # shellcheck disable=SC2034
 LINK_RESULT=unchanged
+# Number of entries the last link_manifest call declined to touch. Read by
+# the 10-shell module to raise a single end-of-run follow-up note.
+LINK_SKIPPED=0
 
 # link_file SRC DEST
 link_file() {
@@ -59,6 +62,24 @@ link_state() {
     printf 'diverged\n'
 }
 
+# link_warn_skip DEST — the yellow, actionable report for a destination that
+# already has something at it.
+#
+# Both directions are offered on purpose. The right answer depends on which
+# copy the user considers authoritative, and guessing wrong is destructive:
+# on a fresh machine a program may have written its own starter file at the
+# destination, and naming only `adopt` would pull that stub into the repo on
+# top of the real committed file.
+link_warn_skip() {
+    local dest=$1 shown=$1
+    if [[ $dest == "$HOME"/* ]]; then
+        shown="~${dest#"$HOME"}"
+    fi
+    log_warn "not linked: a file already exists at $shown"
+    log_warn "    keep the live file → ./dotfiles.sh adopt $shown"
+    log_warn "    keep the repo file → ./dotfiles.sh link --force $shown"
+}
+
 # link_manifest_entries MANIFEST — prints REL<TAB>DEST for each real entry.
 #
 # The one place the manifest format is parsed. Comments, blank lines, a
@@ -83,11 +104,45 @@ link_manifest_entries() {
     done < "$manifest"
 }
 
-# link_manifest MANIFEST REPO_ROOT
+# link_manifest MANIFEST REPO_ROOT — the additive policy.
+#
+# Creates symlinks only where nothing exists yet. Anything already at a
+# destination is left exactly as it is and reported, so that a bootstrap run
+# cannot destroy live configuration no matter what state the machine is in.
+#
+# Always returns 0. On a machine that has been used, a skip is the expected
+# outcome rather than an error, and it must not fail the 10-shell module.
+# Callers read LINK_SKIPPED to decide whether to raise a follow-up note.
 link_manifest() {
     local manifest=$1 root=$2
-    local rel dest
+    local rel dest state
+    LINK_SKIPPED=0
+    # A missing manifest is an error, not a skip. The process substitution
+    # below opens the file in its own subshell, so the open failure would
+    # otherwise be invisible here and a typo'd path would look like a clean
+    # run with nothing to do. Returns 0 regardless: this is sourced into a
+    # module under `set -e`, where a non-zero return aborts the module.
+    if [[ ! -f $manifest ]]; then
+        log_error "no dotfile manifest at $manifest"
+        return 0
+    fi
     while IFS=$'\t' read -r rel dest; do
-        link_file "$root/$rel" "$dest" || true
+        state=$(link_state "$root/$rel" "$dest")
+        case $state in
+            linked)
+                ;;
+            missing)
+                link_file "$root/$rel" "$dest" || true
+                ;;
+            broken)
+                log_warn "not linked: the manifest entry '$rel' names a file that is not in the repo"
+                LINK_SKIPPED=$(( LINK_SKIPPED + 1 ))
+                ;;
+            *)
+                link_warn_skip "$dest"
+                LINK_SKIPPED=$(( LINK_SKIPPED + 1 ))
+                ;;
+        esac
     done < <(link_manifest_entries "$manifest")
+    return 0
 }

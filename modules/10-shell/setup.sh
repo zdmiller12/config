@@ -9,6 +9,12 @@ MODULE_FAILED=0
 # under `set -u`. The fallback is intentionally empty: it degrades to a
 # nonexistent manifest path rather than guessing a location.
 link_manifest "${DOTFILES_DIR:-}/links" "${DOTFILES_DIR:-}"
+# A skip is not a failure: linking is additive, so a destination that already
+# has a file is left alone and reported. Surface the count once at the end of
+# the run too, since the per-file warnings scroll past.
+if (( LINK_SKIPPED )); then
+    summary_note "$LINK_SKIPPED dotfile(s) were not linked because a file already exists at the destination; run ./dotfiles.sh status to review each one."
+fi
 
 # 2. git identity, written outside the repo so nothing personal is committed.
 # Both fields are required: a `[user]` block with only one of name/email set
