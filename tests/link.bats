@@ -281,6 +281,27 @@ EOF
     [ "$status" -eq 0 ]
     [[ $output == *"absent.conf"* ]]
     [ ! -e "$TMPTEST/dest/one.conf" ]
+    # Discriminates correct `broken` routing from a regression that misroutes
+    # it into the `missing` arm. That arm calls link_file, which would emit
+    # its own "link source does not exist" message (swallowed by `|| true`),
+    # and every assertion above would still pass.
+    [[ $output != *"link source does not exist"* ]]
+}
+
+@test "link_manifest reports a missing manifest rather than looking like a clean run" {
+    # The guard this covers is the highest-value defensive line in the
+    # function: the process substitution opens the manifest in a subshell, so
+    # without it an unreadable path yields zero iterations, no diagnostic, and
+    # a successful return -- indistinguishable from a converged machine.
+    status=0
+    output="$(link_manifest "$TMPTEST/nonexistent-manifest" "$TMPTEST/repo" 2>&1)" || status=$?
+    [ "$status" -eq 0 ]
+    [[ $output == *"no dotfile manifest at"* ]]
+    [[ $output == *"nonexistent-manifest"* ]]
+    # Direct call: the capture above runs in a subshell, so LINK_SKIPPED set
+    # inside it is not observable here.
+    link_manifest "$TMPTEST/nonexistent-manifest" "$TMPTEST/repo" > /dev/null 2>&1
+    [ "$LINK_SKIPPED" -eq 0 ]
 }
 
 @test "link_manifest counts skips fresh on each call" {

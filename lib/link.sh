@@ -118,10 +118,17 @@ link_manifest() {
     local rel dest state
     LINK_SKIPPED=0
     # A missing manifest is an error, not a skip. The process substitution
-    # below opens the file in its own subshell, so the open failure would
-    # otherwise be invisible here and a typo'd path would look like a clean
-    # run with nothing to do. Returns 0 regardless: this is sourced into a
-    # module under `set -e`, where a non-zero return aborts the module.
+    # below opens the file in its own subshell, so without this guard the
+    # open failure is invisible here and a typo'd path looks like a clean run
+    # with nothing to do.
+    #
+    # Returns 0 rather than 1 deliberately, though not for the reason you
+    # might expect: lib/module.sh:166-169 brackets its `source setup.sh` in
+    # `set +e`/`set -e` and keeps only the last command's status, so a
+    # non-zero return here could not fail the module anyway. It matters
+    # because this library is also sourced standalone and called directly
+    # from tests, where a non-zero return under `set -e` does abort the
+    # caller. Report loudly, return 0.
     if [[ ! -f $manifest ]]; then
         log_error "no dotfile manifest at $manifest"
         return 0

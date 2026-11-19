@@ -13,7 +13,7 @@ link_manifest "${DOTFILES_DIR:-}/links" "${DOTFILES_DIR:-}"
 # has a file is left alone and reported. Surface the count once at the end of
 # the run too, since the per-file warnings scroll past.
 if (( LINK_SKIPPED )); then
-    summary_note "$LINK_SKIPPED dotfile(s) were not linked because a file already exists at the destination; run ./dotfiles.sh status to review each one."
+    summary_note "$LINK_SKIPPED dotfile(s) were not linked; run ./dotfiles.sh status to see why and resolve each one."
 fi
 
 # 2. git identity, written outside the repo so nothing personal is committed.
