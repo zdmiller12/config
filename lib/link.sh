@@ -123,7 +123,7 @@ link_manifest() {
     # with nothing to do.
     #
     # Returns 0 rather than 1 deliberately, though not for the reason you
-    # might expect: lib/module.sh:166-169 brackets its `source setup.sh` in
+    # might expect: lib/module.sh:165-169 brackets its `source setup.sh` in
     # `set +e`/`set -e` and keeps only the last command's status, so a
     # non-zero return here could not fail the module anyway. It matters
     # because this library is also sourced standalone and called directly
