@@ -58,16 +58,7 @@ parse_args() {
     while (( $# )); do
         case $1 in
             --dry-run) DRY_RUN=1 ;;
-            --force)
-                # No reader until cmd_link lands in Task 6; shellcheck is
-                # correct that nothing consumes this yet. Scoped to this one
-                # statement on purpose — a disable above parse_args() would
-                # mask SC2034 for DRY_RUN, ASSUME_YES, SUBCOMMAND and TARGETS
-                # too, and parse_args is exactly where an unused variable
-                # would be a real bug. Task 6 removes this directive.
-                # shellcheck disable=SC2034
-                LINK_FORCE=1
-                ;;
+            --force) LINK_FORCE=1 ;;
             --yes | -y) ASSUME_YES=1 ;;
             -h | --help)
                 usage
@@ -191,7 +182,106 @@ cmd_status_untracked() {
     return 0
 }
 
-cmd_link()   { log_error "cmd_link is not implemented yet"; return 1; }
+# dotfiles_target_matches DEST REL — does TARGETS name this manifest entry?
+# Accepts either side of the manifest line, since both are things a user
+# plausibly copies out of `status` output.
+dotfiles_target_matches() {
+    local dest=$1 rel=$2 target expanded
+    for target in "${TARGETS[@]:-}"; do
+        if [[ -z $target ]]; then
+            continue
+        fi
+        expanded=${target/#\~/$HOME}
+        if [[ $expanded == "$dest" || $target == "$rel" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# cmd_link — the interactive policy. The user is present, so a conflict is
+# reported in full and left for them to resolve, rather than skipped quietly
+# the way bootstrap does it.
+cmd_link() {
+    local rel dest state shown rc=0 scoped=0 matched=()
+    if (( ${#TARGETS[@]} )); then
+        scoped=1
+    fi
+
+    while IFS=$'\t' read -r rel dest; do
+        if (( scoped )) && ! dotfiles_target_matches "$dest" "$rel"; then
+            continue
+        fi
+        matched+=("$dest" "$rel")
+        shown=$(dotfiles_tildify "$dest")
+        state=$(link_state "$DOTFILES_DIR/$rel" "$dest")
+
+        if (( LINK_FORCE )) && [[ $state != linked && $state != broken ]]; then
+            # link_file does the backup itself, and logs the path it used.
+            log_warn "replacing $shown; the live file is backed up to $shown.bak-$RUN_STAMP"
+            if ! link_file "$DOTFILES_DIR/$rel" "$dest"; then
+                rc=1
+            fi
+            continue
+        fi
+
+        case $state in
+            linked)
+                log_ok "already linked: $shown"
+                ;;
+            missing)
+                if ! link_file "$DOTFILES_DIR/$rel" "$dest"; then
+                    rc=1
+                fi
+                ;;
+            unlinked)
+                # Byte-identical, so there is nothing to back up. Remove it
+                # first so link_file sees a clean destination and does not
+                # write a pointless .bak- copy of content we already have.
+                log_info "converting an identical file to a symlink: $shown"
+                status=0
+                run rm -f "$dest"
+                if ! link_file "$DOTFILES_DIR/$rel" "$dest"; then
+                    rc=1
+                fi
+                ;;
+            diverged)
+                log_warn "DIVERGED: $shown"
+                # diff exits 1 when the files differ, which is the whole
+                # reason we are here.
+                diff -u \
+                    --label "repo: dotfiles/$rel" \
+                    --label "live: $shown" \
+                    "$DOTFILES_DIR/$rel" "$dest" || true
+                link_warn_skip "$dest"
+                rc=1
+                ;;
+            broken)
+                log_error "dotfiles/$rel is in the manifest but not in the repo"
+                rc=1
+                ;;
+        esac
+    done < <(link_manifest_entries "$MANIFEST")
+
+    if (( scoped )); then
+        local target expanded hit
+        for target in "${TARGETS[@]}"; do
+            expanded=${target/#\~/$HOME}
+            hit=0
+            for dest in "${matched[@]:-}"; do
+                if [[ $dest == "$expanded" || $dest == "$target" ]]; then
+                    hit=1
+                fi
+            done
+            if (( ! hit )); then
+                log_error "no manifest entry matches: $target"
+                rc=2
+            fi
+        done
+    fi
+    return "$rc"
+}
+
 cmd_adopt()  { log_error "cmd_adopt is not implemented yet"; return 1; }
 
 main() {
