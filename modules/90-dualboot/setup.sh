@@ -116,7 +116,12 @@ fi
 # $DOTFILES_DIR is always set by bootstrap.sh, but a module sourced manually
 # outside the engine would otherwise abort here under `set -u`.
 if [[ -f ${DOTFILES_DIR:-}/fish/functions/winboot.fish ]]; then
-    link_file "${DOTFILES_DIR:-}/fish/functions/winboot.fish" \
+    # link_additive, not link_file: this module bypassing the additive
+    # policy would let a hand-written winboot.fish on this machine get
+    # silently backed up and replaced, with no yellow warning and no
+    # LINK_SKIPPED follow-up — exactly the overwrite bootstrap.sh promises
+    # never to do.
+    link_additive "${DOTFILES_DIR:-}/fish/functions/winboot.fish" \
         "$HOME/.config/fish/functions/winboot.fish"
 else
     log_warn "dotfiles/fish/functions/winboot.fish not found; skipping winboot link."

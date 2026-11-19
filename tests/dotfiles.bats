@@ -324,6 +324,14 @@ teardown() { teardown_tmpdir; }
     [ -f "$HOME/.one.conf" ]
     [ ! -L "$HOME/.one.conf" ]
     [ "$(cat "$HOME/.one.conf")" = content ]
+    # The filesystem assertions above would still pass against a version
+    # that calls link_file for real (DRY_RUN makes `run` a no-op there too),
+    # which is exactly the bug: link_file would then see a real file at
+    # $dest and take its backup arm, printing a .bak-/rm -rf pair that a real
+    # run of this branch never performs. Assert on the output, not just the
+    # end state.
+    [[ $output != *".bak-"* ]]
+    [[ $output != *"rm -rf"* ]]
 }
 
 @test "link completes when called directly" {
@@ -415,10 +423,18 @@ teardown() { teardown_tmpdir; }
 }
 
 @test "adopt writes a tilde rather than an expanded HOME" {
+    # Seed a real entry first so the manifest is guaranteed non-empty: the
+    # bare `! grep -q "$HOME" "$MANIFEST"` this replaces passed just as well
+    # against an empty manifest, which is not a thing this test can claim to
+    # have checked. Assert the parsed entry itself, not a substring.
+    printf 'other.conf                   ~/.other.conf\n' > "$MANIFEST"
     printf 'live\n' > "$HOME/.one.conf"
     TARGETS=("$HOME/.one.conf" "one/one.conf")
     cmd_adopt
     ! grep -q "$HOME" "$MANIFEST"
+    mapfile -t entries < <(link_manifest_entries "$MANIFEST" 2>/dev/null)
+    [ "${#entries[@]}" -eq 2 ]
+    [ "${entries[1]}" = "$(printf 'one/one.conf\t%s/.one.conf' "$HOME")" ]
 }
 
 @test "adopt is idempotent on an already adopted file" {
@@ -622,5 +638,79 @@ teardown() { teardown_tmpdir; }
     [ ! -e "$DOTFILES_DIR/one/one.conf" ]
     [ ! -L "$HOME/.one.conf" ]
     [ "$(cat "$HOME/.one.conf")" = live ]
+    [ ! -s "$MANIFEST" ]
+}
+
+# --- Whole-branch review regressions -----------------------------------
+
+@test "Critical 1: adopt reuses the manifest's existing rel instead of duplicating the destination" {
+    # dotfiles_infer_repo_path cannot reproduce the git/gitconfig precedent
+    # (it infers plain "gitconfig" for ~/.gitconfig), so without the
+    # manifest-lookup fix this appends a SECOND row for the same ~/.gitconfig
+    # destination -- the DIVERGED report in `status` that adopt can never
+    # clear.
+    mkdir -p "$DOTFILES_DIR/git"
+    printf 'repo stuff\n' > "$DOTFILES_DIR/git/gitconfig"
+    printf 'git/gitconfig                ~/.gitconfig\n' > "$MANIFEST"
+    printf 'live stuff\n' > "$HOME/.gitconfig"
+    TARGETS=("$HOME/.gitconfig")
+    status=0
+    output="$(cmd_adopt 2>&1)" || status=$?
+    [ "$status" -eq 0 ]
+    mapfile -t entries < <(link_manifest_entries "$MANIFEST" 2>/dev/null)
+    [ "${#entries[@]}" -eq 1 ]
+    [ "${entries[0]}" = "$(printf 'git/gitconfig\t%s/.gitconfig' "$HOME")" ]
+}
+
+@test "Critical 2: adopt does not call a symlink to the WRONG repo file already linked" {
+    # link_state(dotfiles/git/gitconfig, ~/.gitconfig) calls this `diverged`
+    # (the live symlink resolves somewhere under dotfiles/, just not to this
+    # entry's source) -- the old hand-rolled "-L + readlink -f + dotfiles/
+    # prefix" check could not tell the difference and reported it healthy.
+    mkdir -p "$DOTFILES_DIR/git" "$DOTFILES_DIR/other"
+    printf 'correct\n' > "$DOTFILES_DIR/git/gitconfig"
+    printf 'stray\n' > "$DOTFILES_DIR/other/stray"
+    ln -s "$DOTFILES_DIR/other/stray" "$HOME/.gitconfig"
+    printf 'git/gitconfig                ~/.gitconfig\n' > "$MANIFEST"
+    TARGETS=("$HOME/.gitconfig")
+    status=0
+    output="$(cmd_adopt 2>&1)" || status=$?
+    [[ $output != *"already linked"* ]]
+}
+
+@test "Important 3: link --force does not claim a backup for a missing destination" {
+    printf 'content\n' > "$DOTFILES_DIR/one.conf"
+    printf 'one.conf  ~/.one.conf\n' > "$MANIFEST"
+    LINK_FORCE=1
+    status=0
+    output="$(cmd_link 2>&1)" || status=$?
+    [ "$status" -eq 0 ]
+    [ -L "$HOME/.one.conf" ]
+    [[ $output != *"backed up"* ]]
+}
+
+@test "Important 3: link --force does not claim a backup when replacing a symlink elsewhere" {
+    printf 'content\n' > "$DOTFILES_DIR/one.conf"
+    printf 'elsewhere\n' > "$TMPTEST/elsewhere.conf"
+    ln -s "$TMPTEST/elsewhere.conf" "$HOME/.one.conf"
+    printf 'one.conf  ~/.one.conf\n' > "$MANIFEST"
+    LINK_FORCE=1
+    status=0
+    output="$(cmd_link 2>&1)" || status=$?
+    [ "$status" -eq 0 ]
+    [ -L "$HOME/.one.conf" ]
+    [[ $output != *"backed up"* ]]
+    [ -z "$(find "$HOME" -name '*.bak-*' -print -quit)" ]
+}
+
+@test "Important 6: adopt refuses a repo path containing whitespace" {
+    mkdir -p "$HOME/.config/My App"
+    printf 'live\n' > "$HOME/.config/My App/config"
+    TARGETS=("$HOME/.config/My App/config" "My App/config")
+    status=0
+    output="$(cmd_adopt 2>&1)" || status=$?
+    [ "$status" -eq 2 ]
+    [ ! -e "$DOTFILES_DIR/My App" ]
+    [ -f "$HOME/.config/My App/config" ]
     [ ! -s "$MANIFEST" ]
 }

@@ -48,8 +48,10 @@ keep the live file → ./dotfiles.sh adopt ~/.config/fish/config.fish
 keep the repo file → ./dotfiles.sh link --force ~/.config/fish/config.fish
 ```
 
-`--force`, on the `dotfiles.sh link` side, is how you ask. It backs the live
-file up to `<path>.bak-<timestamp>` before replacing it.
+`--force`, on the `dotfiles.sh link` side, is how you ask. If a real file is
+sitting at the destination, it backs it up to `<path>.bak-<timestamp>` before
+replacing it; if the destination is a symlink elsewhere, or nothing is there
+yet, there is nothing to back up and it is replaced or created outright.
 
 ## Modules
 

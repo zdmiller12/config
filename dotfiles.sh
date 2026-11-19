@@ -41,8 +41,14 @@ EOF
 }
 
 parse_args() {
+    # Reset every flag parse_args can set, not just SUBCOMMAND/TARGETS, so a
+    # second call (as the test suite and any future re-entrant caller makes)
+    # cannot inherit DRY_RUN/LINK_FORCE/ASSUME_YES from a previous parse.
     SUBCOMMAND=status
     TARGETS=()
+    DRY_RUN=0
+    LINK_FORCE=0
+    ASSUME_YES=0
     if (( $# )) && [[ $1 != -* ]]; then
         case $1 in
             status | link | adopt)
@@ -249,8 +255,16 @@ cmd_link() {
         state=$(link_state "$DOTFILES_DIR/$rel" "$dest")
 
         if (( LINK_FORCE )) && [[ $state != linked && $state != broken ]]; then
-            # link_file does the backup itself, and logs the path it used.
-            log_warn "replacing $shown; the live file is backed up to $shown.bak-$RUN_STAMP"
+            # link_file only backs up in its `elif [[ -e $dest ]]` arm: a
+            # missing destination has nothing to back up, and a destination
+            # that is a symlink elsewhere is just `rm -f`'d (tests/link.bats
+            # "replaces a symlink pointing somewhere else without a backup").
+            # Announce a backup only when link_file is actually about to make
+            # one, so a fresh machine's first --force run does not claim it
+            # replaced and backed up every dotfile it just created.
+            if [[ $state != missing && ! -L $dest ]]; then
+                log_warn "replacing $shown; the live file is backed up to $shown.bak-$RUN_STAMP"
+            fi
             if ! link_file "$DOTFILES_DIR/$rel" "$dest"; then
                 rc=1
             fi
@@ -271,9 +285,20 @@ cmd_link() {
                 # first so link_file sees a clean destination and does not
                 # write a pointless .bak- copy of content we already have.
                 log_info "converting an identical file to a symlink: $shown"
-                run rm -f "$dest"
-                if ! link_file "$DOTFILES_DIR/$rel" "$dest"; then
-                    rc=1
+                if (( DRY_RUN )); then
+                    # `run rm -f` is a no-op under DRY_RUN (lib/log.sh:42),
+                    # so link_file would still see the real file sitting at
+                    # $dest and take its backup arm — printing a .bak-/rm -rf
+                    # pair the real run never performs. Describe the two
+                    # steps directly instead of calling link_file at all,
+                    # the same shape cmd_adopt uses for its own dry run.
+                    _log DRY '0;36' "rm -f $dest"
+                    _log DRY '0;36' "ln -s $DOTFILES_DIR/$rel $dest"
+                else
+                    run rm -f "$dest"
+                    if ! link_file "$DOTFILES_DIR/$rel" "$dest"; then
+                        rc=1
+                    fi
                 fi
                 ;;
             diverged)
@@ -306,7 +331,10 @@ cmd_link() {
             done
             if (( ! hit )); then
                 log_error "no manifest entry matches: $target"
-                rc=2
+                # Do not clobber an rc=1 an earlier diverged/broken entry in
+                # the main loop already set; a usage error here is not more
+                # important than a real failure already found.
+                (( rc )) || rc=2
             fi
         done
     fi
@@ -361,7 +389,8 @@ dotfiles_manifest_append() {
 # order is chosen so that any failure leaves the live file intact: copy in,
 # verify, only then remove and link. Never `mv` as the first step.
 cmd_adopt() {
-    local live rel target resolved inferred tmplink
+    local live rel target inferred tmplink state
+    local manifest_rel mrel mdest
     if (( ${#TARGETS[@]} == 0 )); then
         log_error "adopt needs a path: ./dotfiles.sh adopt ~/.tmux.conf"
         return 2
@@ -378,26 +407,44 @@ cmd_adopt() {
         log_error "adopt takes a file, not a directory: $(dotfiles_tildify "$live")"
         return 2
     fi
-
-    if [[ -L $live ]]; then
-        resolved=$(readlink -f "$live")
-        if [[ $resolved == "$DOTFILES_DIR/"* ]]; then
-            # readlink -f canonicalises even when the final component is
-            # missing, so a symlink into the repo whose target was deleted
-            # still lands here. Reporting that as "already linked" would call
-            # a broken config healthy and exit 0 — link_state classifies the
-            # same situation as `broken`, and adopt must not disagree.
-            if [[ ! -e $resolved ]]; then
-                log_error "$(dotfiles_tildify "$live") points at ${resolved#"$REPO_ROOT/"}, which is missing from the repo"
-                log_error "    restore that file, or remove the dangling link and adopt again"
-                return 1
-            fi
-            log_ok "already linked: $(dotfiles_tildify "$live") → ${resolved#"$REPO_ROOT/"}"
-            return 0
-        fi
+    # A dangling live symlink has no content for `cp -L` to read (it would
+    # just fail), and that is true of a multi-hop chain with a broken
+    # intermediate too, not only a direct break — strictly more general than
+    # the single-hop "resolves into dotfiles/ but the target is missing"
+    # check this replaces below.
+    if [[ -L $live && ! -e $live ]]; then
+        log_error "$(dotfiles_tildify "$live") is a dangling symlink; there is no content to adopt"
+        return 2
     fi
 
-    if [[ -z $rel ]]; then
+    # The manifest, not inference, is authoritative once some prior adopt has
+    # already answered "what repo path does this destination live at" —
+    # dotfiles_infer_repo_path cannot be trusted to reproduce a hand-chosen
+    # precedent like git/gitconfig, and a second row for the same destination
+    # is a duplicate `status` can never converge on (link_manifest_append
+    # dedupes on $rel, never on $dest). Match on $dest, the field that
+    # identifies the live file, not on $rel.
+    manifest_rel=""
+    while IFS=$'\t' read -r mrel mdest; do
+        if [[ $mdest == "$live" ]]; then
+            manifest_rel=$mrel
+            break
+        fi
+    done < <(link_manifest_entries "$MANIFEST")
+
+    if [[ -n $rel ]]; then
+        if [[ -n $manifest_rel && $rel != "$manifest_rel" ]]; then
+            log_error "$(dotfiles_tildify "$live") is already in the manifest as dotfiles/$manifest_rel"
+            log_error "    adopting as $rel would duplicate the destination; use the existing entry:"
+            log_error "    ./dotfiles.sh adopt $(dotfiles_tildify "$live") $manifest_rel"
+            return 2
+        fi
+        # Either no manifest entry names this destination yet, or this
+        # argument already matches it — either way the given rel stands.
+    elif [[ -n $manifest_rel ]]; then
+        # The repo has already answered this question; do not prompt.
+        rel=$manifest_rel
+    else
         inferred=$(dotfiles_infer_repo_path "$live")
         # ui_prompt returns early if the variable is already non-empty.
         DOTFILES_REPO_REL=""
@@ -405,6 +452,12 @@ cmd_adopt() {
             "Repo path under dotfiles/ for $(dotfiles_tildify "$live")" \
             "$inferred"
         rel=$DOTFILES_REPO_REL
+        # ui_prompt silently takes its default with no TTY (or ASSUME_YES),
+        # which is exactly the inference this prompt exists to let a human
+        # correct. Log what got chosen so it still shows up in the transcript.
+        if (( ASSUME_YES )) || ! ui_has_tty; then
+            log_info "no prompt available; adopting at the inferred path dotfiles/$rel"
+        fi
     fi
     if [[ -z $rel ]]; then
         log_error "no repo path given"
@@ -436,7 +489,35 @@ cmd_adopt() {
             return 2
             ;;
     esac
+    # The manifest format is whitespace-separated (link_manifest_entries's
+    # `read -r rel dest _`), and nothing downstream validates it. A rel or
+    # destination containing whitespace parses as more fields than the line
+    # has, silently corrupting that row — and the next one, whose destination
+    # gets swallowed as this row's trailing field. Refuse before any copy.
+    if [[ $rel == *[[:space:]]* || $(dotfiles_tildify "$live") == *[[:space:]]* ]]; then
+        log_error "repo path or destination contains whitespace, which the manifest format cannot express: $(dotfiles_tildify "$live")"
+        return 2
+    fi
     target="$DOTFILES_DIR/$rel"
+    # A repo path naming an existing directory would have `cp -L` copy INTO
+    # it under the live basename, leaving a stray file behind even once the
+    # cmp below correctly refuses — and leak raw "cmp: ... Is a directory"
+    # lines past the logging layer while doing it. Refuse before mkdir/cp get
+    # anywhere near it.
+    if [[ -d $target ]]; then
+        log_error "dotfiles/$rel is a directory; adopt needs a path to a file inside it"
+        return 2
+    fi
+
+    # Agree with link_state, the one classifier status and link both use,
+    # rather than re-deriving link state here. A symlink that resolves under
+    # dotfiles/ but points at the WRONG file is `diverged` to status; adopt
+    # must not call that case `already linked` too.
+    state=$(link_state "$target" "$live")
+    if [[ $state == linked ]]; then
+        log_ok "already linked: $(dotfiles_tildify "$live") → dotfiles/$rel"
+        return 0
+    fi
 
     if [[ -e $target ]] && ! cmp -s "$live" "$target"; then
         if (( ! LINK_FORCE )) && dotfiles_is_dirty "$target"; then

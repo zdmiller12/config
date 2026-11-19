@@ -1,6 +1,8 @@
 # shellcheck shell=bash
-# Dotfile symlinking. Anything pre-existing and not already a symlink is
-# backed up before being replaced.
+# Dotfile symlinking. link_additive/link_manifest are additive: a
+# pre-existing destination is left exactly alone and reported, never backed
+# up or replaced. Only the interactive `dotfiles.sh link --force` path backs
+# up and replaces anything, via link_file directly.
 
 # shellcheck disable=SC2034
 LINK_RESULT=unchanged
@@ -104,7 +106,39 @@ link_manifest_entries() {
     done < "$manifest"
 }
 
-# link_manifest MANIFEST REPO_ROOT — the additive policy.
+# link_additive SRC DEST — the additive policy for one SRC/DEST pair: link
+# only where nothing exists yet; leave and report anything else exactly as it
+# is. The single place this per-pair policy is implemented — link_manifest
+# calls it once per entry, and any module that must not overwrite a file it
+# did not itself create (e.g. 90-dualboot's winboot link) calls it directly
+# instead of reaching for link_file, which backs up and replaces.
+#
+# Always returns 0, for the same reason link_manifest does: callers read
+# LINK_SKIPPED rather than a return status, and a non-zero return here would
+# abort a caller running under `set -e` for no benefit.
+link_additive() {
+    local src=$1 dest=$2 state
+    state=$(link_state "$src" "$dest")
+    case $state in
+        linked)
+            ;;
+        missing)
+            link_file "$src" "$dest" || true
+            ;;
+        broken)
+            log_warn "not linked: the manifest entry '$src' names a file that is not in the repo"
+            LINK_SKIPPED=$(( LINK_SKIPPED + 1 ))
+            ;;
+        *)
+            link_warn_skip "$dest"
+            LINK_SKIPPED=$(( LINK_SKIPPED + 1 ))
+            ;;
+    esac
+    return 0
+}
+
+# link_manifest MANIFEST REPO_ROOT — the additive policy, applied to every
+# manifest entry via link_additive.
 #
 # Creates symlinks only where nothing exists yet. Anything already at a
 # destination is left exactly as it is and reported, so that a bootstrap run
@@ -115,7 +149,7 @@ link_manifest_entries() {
 # Callers read LINK_SKIPPED to decide whether to raise a follow-up note.
 link_manifest() {
     local manifest=$1 root=$2
-    local rel dest state
+    local rel dest
     LINK_SKIPPED=0
     # A missing manifest is an error, not a skip. The process substitution
     # below opens the file in its own subshell, so without this guard the
@@ -134,22 +168,7 @@ link_manifest() {
         return 0
     fi
     while IFS=$'\t' read -r rel dest; do
-        state=$(link_state "$root/$rel" "$dest")
-        case $state in
-            linked)
-                ;;
-            missing)
-                link_file "$root/$rel" "$dest" || true
-                ;;
-            broken)
-                log_warn "not linked: the manifest entry '$rel' names a file that is not in the repo"
-                LINK_SKIPPED=$(( LINK_SKIPPED + 1 ))
-                ;;
-            *)
-                link_warn_skip "$dest"
-                LINK_SKIPPED=$(( LINK_SKIPPED + 1 ))
-                ;;
-        esac
+        link_additive "$root/$rel" "$dest"
     done < <(link_manifest_entries "$manifest")
     return 0
 }
