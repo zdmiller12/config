@@ -157,3 +157,45 @@ EOF
     # it; this one would. See the errexit note in Global Constraints.
     link_state "$TMPTEST/repo/file.conf" "$TMPTEST/dest/file.conf" > /dev/null
 }
+
+@test "link_manifest_entries emits tab-separated entries and drops comments and blanks" {
+    cat > links <<EOF
+# a comment
+
+file.conf    /tmp/one.conf
+second.conf  /tmp/two.conf
+EOF
+    mapfile -t lines < <(link_manifest_entries links)
+    [ "${#lines[@]}" -eq 2 ]
+    [ "${lines[0]}" = "$(printf 'file.conf\t/tmp/one.conf')" ]
+    [ "${lines[1]}" = "$(printf 'second.conf\t/tmp/two.conf')" ]
+}
+
+@test "link_manifest_entries expands a leading tilde" {
+    HOME="$TMPTEST/fakehome"
+    printf 'file.conf  ~/.config/app/file.conf\n' > links
+    mapfile -t lines < <(link_manifest_entries links)
+    [ "${lines[0]}" = "$(printf 'file.conf\t%s/.config/app/file.conf' "$TMPTEST/fakehome")" ]
+}
+
+@test "link_manifest_entries emits a final line with no trailing newline" {
+    printf 'file.conf  /tmp/one.conf' > links
+    mapfile -t lines < <(link_manifest_entries links)
+    [ "${#lines[@]}" -eq 1 ]
+    [ "${lines[0]}" = "$(printf 'file.conf\t/tmp/one.conf')" ]
+}
+
+@test "link_manifest_entries skips a line with no destination" {
+    printf 'orphan\nfile.conf  /tmp/one.conf\n' > links
+    mapfile -t lines < <(link_manifest_entries links)
+    [ "${#lines[@]}" -eq 2 ]   # one error line, one entry
+    [[ ${lines[0]} == *"manifest line has no destination: orphan"* ]]
+    [ "${lines[1]}" = "$(printf 'file.conf\t/tmp/one.conf')" ]
+}
+
+@test "link_manifest_entries returns zero when called directly" {
+    # The tests above go through `run`, which disables errexit inside the
+    # function and so cannot see an abort. This one can.
+    printf 'file.conf  /tmp/one.conf\n' > links
+    link_manifest_entries links > /dev/null
+}

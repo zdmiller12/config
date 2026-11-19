@@ -59,14 +59,30 @@ link_state() {
     printf 'diverged\n'
 }
 
+# link_manifest_entries MANIFEST — prints REL<TAB>DEST for each real entry.
+#
+# The one place the manifest format is parsed. Comments, blank lines, a
+# leading ~ in the destination, and a final line with no trailing newline are
+# all handled here so that every consumer gets identical behavior.
+link_manifest_entries() {
+    local manifest=$1 rel dest
+    while read -r rel dest _ || [[ -n $rel ]]; do
+        if [[ -z $rel || $rel == \#* ]]; then
+            continue
+        fi
+        if [[ -z $dest ]]; then
+            log_error "manifest line has no destination: $rel"
+            continue
+        fi
+        printf '%s\t%s\n' "$rel" "${dest/#\~/$HOME}"
+    done < "$manifest"
+}
+
 # link_manifest MANIFEST REPO_ROOT
 link_manifest() {
     local manifest=$1 root=$2
     local rel dest
-    while read -r rel dest _ || [[ -n $rel ]]; do
-        [[ -z $rel || $rel == \#* ]] && continue
-        [[ -z $dest ]] && { log_error "manifest line has no destination: $rel"; continue; }
-        dest=${dest/#\~/$HOME}
+    while IFS=$'\t' read -r rel dest; do
         link_file "$root/$rel" "$dest" || true
-    done < "$manifest"
+    done < <(link_manifest_entries "$manifest")
 }
