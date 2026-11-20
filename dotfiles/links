@@ -6,3 +6,4 @@
 fish/config.fish              ~/.config/fish/config.fish
 fish/functions/usd.fish       ~/.config/fish/functions/usd.fish
 git/gitconfig                 ~/.gitconfig
+fish/conf.d/local-paths.fish  ~/.config/fish/conf.d/local-paths.fish
