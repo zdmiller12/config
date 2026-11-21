@@ -89,12 +89,11 @@ Exit status is 0 when every entry is `linked`, and 1 when any entry is
 
 After the table, an informational tail lists files under `dotfiles/` that no
 manifest entry references, labeled "not in the manifest — linked by a module,
-or not linked at all". Today that is `fish/functions/winboot.fish` (linked by
-`90-dualboot`, and correctly *not* in the manifest, because `winboot` must
-only land on dual-boot machines) and `ssh/config.template` (rendered by
-`60-nas`, never linked). Both are legitimate, so this tail never affects exit
-status. No ignore-file mechanism: that would be machinery for two known,
-documented entries.
+or not linked at all". Today that is `ssh/config.template` (rendered by
+`60-nas`, never linked), which is legitimate, so this tail never affects exit
+status. No ignore-file mechanism: that would be machinery for one known,
+documented entry. (`fish/functions/winboot.fish` was the second such entry —
+see the revision note at the end of this document.)
 
 ### Two link policies, one classifier
 
@@ -259,3 +258,20 @@ part of the same unit.
   commands that resolve it, so the message is self-explanatory without
   reading the spec.
 - `dotfiles.sh` added to the docs index at the bottom of the README.
+
+
+## Revision: winboot moved into the manifest
+
+This spec originally kept `fish/functions/winboot.fish` out of the manifest and
+left `90-dualboot` to link it, reasoning that `winboot` must only land on a
+dual-boot machine. Reading the function again, that reasoning does not hold. It
+resolves the Windows entry from EFI NVRAM at call time, and with no such entry
+it prints "hold Esc at power-on to reach the GRUB menu instead" and returns 1.
+It also confirms before rebooting, and `--bootnext` is one-shot and
+self-clearing. There is no harm model on a single-boot machine.
+
+So it is now a plain manifest entry, like `fish/functions/usd.fish`, and the
+module's link block is gone. Two consequences, both wanted: `winboot` arrives
+without enabling `90-dualboot` (which also sets `GRUB_TIMEOUT=0` and enables
+`os-prober` — large changes to make for one function), and a divergent
+`winboot.fish` is now reported once rather than twice.

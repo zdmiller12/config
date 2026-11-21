@@ -65,7 +65,7 @@ yet, there is nothing to back up and it is replaced or created outright.
 | `50-media` | on | ffmpeg, mkvtoolnix, VLC, inkscape, pandoc, texlive, image tools |
 | `60-nas` | off | sshfs and a systemd mount unit for the NAS |
 | `90-bluetooth-autoreconnect` | off | bluez auto-enable and userspace HID |
-| `90-dualboot` | off | GRUB hidden menu, Windows in the GRUB menu, `winboot` |
+| `90-dualboot` | off | GRUB hidden menu, Windows in the GRUB menu |
 
 `00-core` cannot be deselected. `10-shell` is required by `20-toolchains`. The
 `90-` prefix marks modules that change system state outside the package

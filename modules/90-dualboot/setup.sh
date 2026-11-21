@@ -113,19 +113,13 @@ fi
 
 # 7. winboot, installed only because a Windows EFI entry exists. The
 #    function itself is untouched — this module only links it into place.
-# $DOTFILES_DIR is always set by bootstrap.sh, but a module sourced manually
-# outside the engine would otherwise abort here under `set -u`.
-if [[ -f ${DOTFILES_DIR:-}/fish/functions/winboot.fish ]]; then
-    # link_additive, not link_file: this module bypassing the additive
-    # policy would let a hand-written winboot.fish on this machine get
-    # silently backed up and replaced, with no yellow warning and no
-    # LINK_SKIPPED follow-up — exactly the overwrite bootstrap.sh promises
-    # never to do.
-    link_additive "${DOTFILES_DIR:-}/fish/functions/winboot.fish" \
-        "$HOME/.config/fish/functions/winboot.fish"
-else
-    log_warn "dotfiles/fish/functions/winboot.fish not found; skipping winboot link."
-fi
+# winboot.fish is linked by the dotfiles manifest, not here. It used to be
+# this module's job on the theory that winboot must only land on a dual-boot
+# machine, but the function disproves that: with no "Windows Boot Manager"
+# entry in EFI NVRAM it prints what to do instead and returns 1, it confirms
+# before rebooting, and --bootnext is one-shot. Nothing about it is harmful on
+# a single-boot machine, and one owner beats two — linking it in both places
+# warned twice about the same divergent file.
 
 (( MODULE_FAILED )) && return 1
 return 0
