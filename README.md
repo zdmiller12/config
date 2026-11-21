@@ -20,19 +20,52 @@ for a module selection and your identity; later runs replay the saved choices.
 | `--only MODULE` | Run just this module (repeatable) |
 | `--skip MODULE` | Skip this module (repeatable) |
 
+## Capturing config changes
+
+The dotfiles in `dotfiles/` are not copies. They are the files your machine
+actually reads, reached through symlinks, so editing `~/.gitconfig` edits this
+repo. Nothing needs syncing — only committing.
+
+```sh
+./dotfiles.sh                        # what is linked, what is not
+./dotfiles.sh link                   # link anything not linked yet
+./dotfiles.sh adopt ~/.tmux.conf     # pull a new live file into the repo
+```
+
+`adopt` moves the live file into `dotfiles/`, adds a manifest entry, and
+symlinks it back. It infers the repo path and shows it for confirmation; pass
+a second argument to choose one yourself. Nothing is committed for you —
+review with `git diff`.
+
+Nothing replaces a live file unless you ask it to. `bootstrap.sh` has no way
+to ask — its linking is purely additive, so a bootstrap run cannot overwrite
+config already on the machine. When it finds a file sitting at a destination
+it says so in yellow and offers both ways out, because only you know which
+copy is authoritative:
+
+```
+keep the live file → ./dotfiles.sh adopt ~/.config/fish/config.fish
+keep the repo file → ./dotfiles.sh link --force ~/.config/fish/config.fish
+```
+
+`--force`, on the `dotfiles.sh link` side, is how you ask. If a real file is
+sitting at the destination, it backs it up to `<path>.bak-<timestamp>` before
+replacing it; if the destination is a symlink elsewhere, or nothing is there
+yet, there is nothing to back up and it is replaced or created outright.
+
 ## Modules
 
 | Module | Default | What it does |
 |---|---|---|
 | `00-core` | on | Build toolchain and the headers needed to compile Pythons |
-| `10-shell` | on | fish, fisher, dotfile links, git identity, SSH key generation |
+| `10-shell` | on | fish, fisher, dotfile links (additive — see [Capturing config changes](#capturing-config-changes)), git identity, SSH key generation |
 | `20-toolchains` | on | asdf, pyenv, uv, rustup and their fish init blocks |
 | `30-dev` | on | VSCode and its extensions, Docker CE |
 | `40-desktop` | on | Browser, torrent client, KDE Connect, fonts, GNOME settings |
 | `50-media` | on | ffmpeg, mkvtoolnix, VLC, inkscape, pandoc, texlive, image tools |
 | `60-nas` | off | sshfs and a systemd mount unit for the NAS |
 | `90-bluetooth-autoreconnect` | off | bluez auto-enable and userspace HID |
-| `90-dualboot` | off | GRUB hidden menu, Windows in the GRUB menu, `winboot` |
+| `90-dualboot` | off | GRUB hidden menu, Windows in the GRUB menu |
 
 `00-core` cannot be deselected. `10-shell` is required by `20-toolchains`. The
 `90-` prefix marks modules that change system state outside the package
@@ -73,8 +106,12 @@ Ubuntu, `winboot` reboots into Windows once.
 
 Captured state that the wipe would destroy:
 
-- [ ] Commit the live `~/.config/fish/config.fish`, `~/.gitconfig`, and
-      `~/.ssh/config` if they have drifted from the copies in `dotfiles/`.
+- [ ] Run `./dotfiles.sh status` and commit anything it reports. The linked
+      dotfiles cannot drift — they are this repo's files — but a file that was
+      never adopted, or one left unlinked because something already existed at
+      its destination, only exists on this machine. `~/.ssh/config` is
+      deliberately not committed; copy any host entries you want to keep by
+      hand.
 - [ ] Refresh the manifests: `apt-mark showmanual`, `snap list`,
       `code --list-extensions`, `asdf plugin list`, and a `dconf dump` of the
       terminal profile. `dconf dump` emits only deviations from the GNOME
@@ -115,6 +152,7 @@ both interactive paths, GNOME, the NAS, bluetooth, and GRUB.
 
 ## Other docs
 
+- [`dotfiles.sh`](./dotfiles.sh) — report, link, and adopt dotfiles (`--help`)
 - [tools/](./tools/README.md) — standalone scripts, not part of bootstrap
 - [docs/openusd.md](./docs/openusd.md) — OpenUSD manual build notes
 - [docs/virtualization.md](./docs/virtualization.md) — if you want VMs back

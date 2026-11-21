@@ -1,6 +1,10 @@
 # Dotfile symlinks: <path relative to dotfiles/>   <destination>
-# Anything pre-existing and not already a symlink is backed up first.
+# Linking here is additive: an entry is linked only where nothing exists yet.
+# A pre-existing destination is left exactly alone and reported — nothing in
+# this file is ever backed up or replaced.
 
 fish/config.fish              ~/.config/fish/config.fish
 fish/functions/usd.fish       ~/.config/fish/functions/usd.fish
 git/gitconfig                 ~/.gitconfig
+fish/functions/winboot.fish   ~/.config/fish/functions/winboot.fish
+fish/conf.d/local-paths.fish  ~/.config/fish/conf.d/local-paths.fish
