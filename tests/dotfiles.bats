@@ -731,3 +731,61 @@ teardown() { teardown_tmpdir; }
     [ -f "$HOME/.config/My App/config" ]
     [ ! -s "$MANIFEST" ]
 }
+
+@test "status lists a newline-containing repo file as one entry" {
+    # find|read splits on newlines, so an embedded newline reported the file
+    # as two bogus entries, neither of which was a real path.
+    printf 'content\n' > "$DOTFILES_DIR/one.conf"
+    ln -s "$DOTFILES_DIR/one.conf" "$HOME/.one.conf"
+    printf 'one.conf  ~/.one.conf\n' > "$MANIFEST"
+    printf 'odd\n' > "$DOTFILES_DIR/we
+ird.conf"
+    status=0
+    output="$(cmd_status 2>&1)" || status=$?
+    # Count audit entries, not substrings. One file must yield ONE entry; the
+    # split bug yielded two, and every substring assertion I tried passed
+    # against both. The manifest entry here is `linked` (logged via log_ok),
+    # so the only [INFO] lines in the output come from the audit.
+    [ "$(grep -c '^\[INFO\]' <<< "$output")" -eq 1 ]
+}
+
+@test "status lists a symlink inside dotfiles as untracked" {
+    # find -type f excluded symlinks entirely, so one landing in dotfiles/
+    # (a botched manual copy, say) was invisible to the audit.
+    printf 'content\n' > "$DOTFILES_DIR/one.conf"
+    ln -s "$DOTFILES_DIR/one.conf" "$HOME/.one.conf"
+    printf 'one.conf  ~/.one.conf\n' > "$MANIFEST"
+    ln -s /etc/hostname "$DOTFILES_DIR/a-symlink.conf"
+    status=0
+    output="$(cmd_status 2>&1)" || status=$?
+    [[ $output == *"a-symlink.conf"* ]]
+}
+
+@test "parse_args treats everything after -- as a target" {
+    parse_args link -- --force -weird.conf
+    [ "$SUBCOMMAND" = link ]
+    # --force after -- is a target, not a flag.
+    [ "$LINK_FORCE" -eq 0 ]
+    [ "${TARGETS[0]}" = "--force" ]
+    [ "${TARGETS[1]}" = "-weird.conf" ]
+}
+
+@test "parse_args accepts a bare -- with nothing after it" {
+    parse_args link --
+    [ "$SUBCOMMAND" = link ]
+    [ "${#TARGETS[@]}" -eq 0 ]
+}
+
+@test "the real entry point reports an unset HOME instead of aborting on it" {
+    # Must run the real script: the guard lives in main(), which these tests
+    # never execute (DOTFILES_NO_MAIN). Placed after the lib/ sources it could
+    # not fire at all, because lib/log.sh:6 reads $HOME at source time.
+    status=0
+    # -u DOTFILES_NO_MAIN as well as -u HOME: setup() EXPORTS that seam, so a
+    # child process inherits it, main() never runs, and the script would exit 0
+    # without reaching the guard — making this test silently vacuous.
+    output="$(env -u HOME -u DOTFILES_NO_MAIN "$REPO_ROOT/dotfiles.sh" status 2>&1)" || status=$?
+    [ "$status" -eq 1 ]
+    [[ $output == *"HOME is unset or empty"* ]]
+    [[ $output != *"unbound variable"* ]]
+}

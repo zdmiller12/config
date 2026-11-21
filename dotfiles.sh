@@ -70,6 +70,14 @@ parse_args() {
                 usage
                 return 10
                 ;;
+            --)
+                # Everything after -- is a target, including anything that
+                # looks like a flag. Without this a destination beginning with
+                # a dash was unreachable: it was rejected as an unknown option.
+                shift
+                TARGETS+=("$@")
+                break
+                ;;
             -*)
                 printf 'Unknown option: %s\n' "$1" >&2
                 return 2
@@ -193,7 +201,7 @@ cmd_status_untracked() {
         referenced+=("$rel")
     done < <(link_manifest_entries "$MANIFEST")
 
-    while IFS= read -r found; do
+    while IFS= read -r -d '' found; do
         candidate=${found#"$DOTFILES_DIR/"}
         if [[ $candidate == links ]]; then
             continue
@@ -207,7 +215,12 @@ cmd_status_untracked() {
         if (( ! seen )); then
             untracked+=("$candidate")
         fi
-    done < <(find "$DOTFILES_DIR" -type f | sort)
+    # -print0/-d '' because a newline in a filename otherwise splits one
+    # file into two bogus entries. `-o -type l` rather than `find -L`: we want
+    # to LIST a symlink that lands in dotfiles/ (a botched manual copy — adopt
+    # cannot create one, since it dereferences), not follow it and report its
+    # target as though it lived here.
+    done < <(find "$DOTFILES_DIR" \( -type f -o -type l \) -print0 | sort -z)
 
     if (( ${#untracked[@]} == 0 )); then
         return 0
@@ -569,6 +582,7 @@ cmd_adopt() {
         tmplink="$live.dotfiles-adopt-$$"
         if ! run ln -s "$target" "$tmplink"; then
             log_error "could not stage a symlink at $tmplink; $(dotfiles_tildify "$live") is untouched"
+            log_error "    if a file is already there from an interrupted run, remove it and retry"
             return 1
         fi
         if ! run mv -T "$tmplink" "$live"; then
@@ -585,6 +599,18 @@ cmd_adopt() {
 }
 
 main() {
+    # Checked before sourcing lib/, not after: lib/log.sh:6 builds LOG_DIR from
+    # $HOME at source time, so under `set -u` an unset HOME aborts there with a
+    # bare "HOME: unbound variable" and a guard placed after the sources can
+    # never fire. log_error does not exist yet either, hence printf.
+    #
+    # Degenerate-but-set values (HOME=/) are deliberately out of scope: the
+    # whole repo assumes a sane HOME and bootstrap.sh fails far earlier.
+    if [[ -z ${HOME:-} ]]; then
+        printf 'HOME is unset or empty; dotfiles.sh cannot resolve any destination\n' >&2
+        return 1
+    fi
+
     # shellcheck source=lib/log.sh
     source "$REPO_ROOT/lib/log.sh"
     # shellcheck source=lib/link.sh
